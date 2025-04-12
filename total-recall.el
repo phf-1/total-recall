@@ -19,14 +19,14 @@
 ;;
 ;; This package provides `total-recall'.
 ;; 
-;; `M-x total-recall' searches for Org files in the directory
-;; specified by `total-recall-root-dir' that contain exercises. It lists the
-;; exercises and presents a user interface to display them. For
-;; each exercise, it shows the question first, followed by the
-;; answer. It then records the user's performance, i.e., whether
-;; they provided a correct answer. This data is stored in an SQLite
-;; database at `total-recall-database', which is used to determine whether
-;; the exercise should be reviewed sooner or later.
+;; `M-x total-recall' searches (using Ripgrep) for Org files in the
+;; directory specified by `total-recall-root-dir' that contain exercises.
+;; It lists the exercises and presents a user interface to display them.
+;; For each exercise, it shows the question first, followed by the answer.
+;; It then records the user's performance, i.e., whether they provided a
+;; correct answer. This data is stored in an SQLite database at
+;; `total-recall-database', which is used to determine whether the exercise
+;; should be reviewed sooner or later.
 ;; 
 ;; An exercise is any heading in an Org file such that:
 ;; - It has a property `TYPE' which value is `total-recall-type-id'.
@@ -514,14 +514,14 @@ Returns a list of exercise structures for :list-exercises."
 
 This package provides `total-recall'.
 
-`M-x total-recall' searches for Org files in the directory
-specified by `total-recall-root-dir' that contain exercises. It lists the
-exercises and presents a user interface to display them. For
-each exercise, it shows the question first, followed by the
-answer. It then records the user's performance, i.e., whether
-they provided a correct answer. This data is stored in an SQLite
-database at `total-recall-database', which is used to determine whether
-the exercise should be reviewed sooner or later.
+`M-x total-recall' searches (using Ripgrep) for Org files in the
+directory specified by `total-recall-root-dir' that contain exercises.
+It lists the exercises and presents a user interface to display them.
+For each exercise, it shows the question first, followed by the answer.
+It then records the user's performance, i.e., whether they provided a
+correct answer. This data is stored in an SQLite database at
+`total-recall-database', which is used to determine whether the exercise
+should be reviewed sooner or later.
 
 An exercise is any heading in an Org file such that:
 - It has a property `TYPE' which value is `total-recall-type-id'.
@@ -546,6 +546,10 @@ An exercise is any heading in an Org file such that:
 
 <content>"
   (interactive)
+
+  (unless (executable-find locs-and-refs-ripgrep-cmd)
+    (user-error "Ripgrep (rg) is not installed. Please install it to use this package"))
+
   (let ((exercises (total-recall--fs-list-exercises total-recall-root-dir))
         (db (total-recall--db-mk total-recall-database))
         (now (current-time))
