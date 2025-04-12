@@ -19,37 +19,41 @@
 ;;
 ;; This package provides `total-recall'.
 ;; 
-;; `M-x total-recall' searches (using Ripgrep) for Org files in the
-;; directory specified by `total-recall-root-dir' that contain exercises.
-;; It lists the exercises and presents a user interface to display them.
-;; For each exercise, it shows the question first, followed by the answer.
-;; It then records the user's performance, i.e., whether they provided a
-;; correct answer. This data is stored in an SQLite database at
-;; `total-recall-database', which is used to determine whether the exercise
+;; The command `M-x total-recall' uses Ripgrep to search for Org files in the directory
+;; specified by `total-recall-root-dir' that contain exercises. For each file found, it
+;; lists the exercises and presents a user interface to display them.
+;; 
+;; For each exercise, it first shows the question, followed by the answer. The user's
+;; performance — whether they provided a correct answer — is recorded and stored in an
+;; SQLite database at `total-recall-database'. This data determines whether an exercise
 ;; should be reviewed sooner or later.
 ;; 
-;; An exercise is any heading in an Org file such that:
-;; - It has a property `TYPE' which value is `total-recall-type-id'.
-;; - It has a property `ID' which value is a UUID.
-;; - It has two sub-headings.
-;;   - the first one encodes a question,
-;;   - and the second on encodes an answer.
-;; - Its parent file lives under `total-recall-root-dir'.
-;; - example:
+;; An exercise is defined as any heading in an Org file that meets the following
+;; criteria:
+;; - It has a `TYPE' property with the value `total-recall-type-id'.
+;; - It has an `ID' property with a UUID value.
+;; - It contains two subheadings:
+;;   - The first subheading encodes a question.
+;;   - The second subheading encodes an answer.
+;; - The file is located under `total-recall-root-dir'.
 ;; 
-;; * Name
+;; Example of an exercise:
+;; 
+;; * Emacs
 ;; :PROPERTIES: 
 ;; :TYPE: b0d53cd4-ad89-4333-9ef1-4d9e0995a4d8
 ;; :ID: ced2b42b-bfba-4af5-913c-9d903ac78433
 ;; :END:
 ;; 
-;; ** Question
+;; ** What is GNU Emacs?
 ;; 
-;; <content>
+;; [optional content]
 ;; 
 ;; ** Answer
 ;; 
-;; <content>
+;; An extensible, customizable, free/libre text editor — and more.
+;; At its core is an interpreter for Emacs Lisp, a dialect of the Lisp programming language
+;; with extensions to support text editing.
 ;;
 ;;; Code:
 
@@ -514,37 +518,41 @@ Returns a list of exercise structures for :list-exercises."
 
 This package provides `total-recall'.
 
-`M-x total-recall' searches (using Ripgrep) for Org files in the
-directory specified by `total-recall-root-dir' that contain exercises.
-It lists the exercises and presents a user interface to display them.
-For each exercise, it shows the question first, followed by the answer.
-It then records the user's performance, i.e., whether they provided a
-correct answer. This data is stored in an SQLite database at
-`total-recall-database', which is used to determine whether the exercise
+The command `M-x total-recall' uses Ripgrep to search for Org files in the directory
+specified by `total-recall-root-dir' that contain exercises. For each file found, it
+lists the exercises and presents a user interface to display them.
+
+For each exercise, it first shows the question, followed by the answer. The user's
+performance — whether they provided a correct answer — is recorded and stored in an
+SQLite database at `total-recall-database'. This data determines whether an exercise
 should be reviewed sooner or later.
 
-An exercise is any heading in an Org file such that:
-- It has a property `TYPE' which value is `total-recall-type-id'.
-- It has a property `ID' which value is a UUID.
-- It has two sub-headings.
-  - the first one encodes a question,
-  - and the second on encodes an answer.
-- Its parent file lives under `total-recall-root-dir'.
-- example:
+An exercise is defined as any heading in an Org file that meets the following
+criteria:
+- It has a `TYPE' property with the value `total-recall-type-id'.
+- It has an `ID' property with a UUID value.
+- It contains two subheadings:
+  - The first subheading encodes a question.
+  - The second subheading encodes an answer.
+- The file is located under `total-recall-root-dir'.
 
-* Name
+Example of an exercise:
+
+* Emacs
 :PROPERTIES: 
 :TYPE: b0d53cd4-ad89-4333-9ef1-4d9e0995a4d8
 :ID: ced2b42b-bfba-4af5-913c-9d903ac78433
 :END:
 
-** Question
+** What is GNU Emacs?
 
-<content>
+[optional content]
 
 ** Answer
 
-<content>"
+An extensible, customizable, free/libre text editor — and more.
+At its core is an interpreter for Emacs Lisp, a dialect of the Lisp programming language
+with extensions to support text editing."
   (interactive)
 
   (unless (executable-find locs-and-refs-ripgrep-cmd)
