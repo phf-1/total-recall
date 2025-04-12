@@ -61,7 +61,7 @@
 
 (defgroup total-recall nil
   "Customization options for Total Recall.
-This mode provides `total-recall' for spaced repetition in Emacs."
+This package provides `total-recall' for spaced repetition in Emacs."
   :group 'convenience
   :prefix "total-recall-")
 
@@ -288,15 +288,15 @@ DB is an SQLite database handle. Returns t."
 
 (defun total-recall--db-rcv (db msg)
   "Handle MSG for SQLite database DB.
-DB is an SQLite database handle. MSG can be (:save MEASURE), :close,
-(:select :measures ID), (:measure-to-row MEASURE), or (:row-to-measure ROW).
-Returns the result of the operation (e.g., t, list of measures)."
+DB is an SQLite database handle.
+Returns the result of the operation."
   (unless (sqlite-select db "SELECT name FROM sqlite_master WHERE type='table' AND name='exercise_log'")
     (sqlite-execute db
                     "CREATE TABLE exercise_log (
                        type TEXT NOT NULL,
                        id TEXT NOT NULL,
                        time TEXT NOT NULL)"))
+
   (pcase msg
     (`(:measure-to-row ,measure)
      (pcase measure
@@ -308,7 +308,7 @@ Returns the result of the operation (e.g., t, list of measures)."
               (id (total-recall--measure-id measure))
               (time (total-recall--time-to-iso8601 (total-recall--measure-time measure))))
           (list type id time)))
-       (_ (error "measure is not a Measure. %S" measure))))
+       (_ (error "MEASURE is not a Measure. %S" measure))))
 
     (`(:row-to-measure ,row)
      (pcase row
@@ -391,9 +391,13 @@ or (:scheduled DB). Returns the corresponding value (e.g., string or timestamp).
   (pcase-let ((`(:exercise ,name ,id ,question ,answer) exercise))
     (pcase msg
       (:name name)
+
       (:id id)
+
       (:question question)
+
       (:answer answer)
+
       (`(:scheduled ,db)
        (let (measures (last-failure-index -1) nbr last-success-time)
          (setq measures (total-recall--db-select db id))
