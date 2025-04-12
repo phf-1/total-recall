@@ -1,1 +1,1 @@
-# total-recall
+see: [total-recall.el](total-recall.el)
