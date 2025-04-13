@@ -59,11 +59,15 @@
 ;;
 ;;; Code:
 
+;; Dependencies
+
 (unless (sqlite-available-p)
   (error "Emacs must be compiled with built-in support for SQLite databases"))
 (require 'org)
 (require 'time-date)
 (require 'parse-time)
+
+;; Configuration
 
 (defgroup total-recall nil
   "Customization options for Total Recall.
@@ -101,6 +105,8 @@ This package provides `total-recall' for spaced repetition in Emacs."
   :type 'integer
   :group 'total-recall)
 
+;; Utils
+
 (defun total-recall--time-to-iso8601 (time)
   "Convert TIME to an ISO 8601 formatted string.
 TIME is a Lisp timestamp. Returns a string in the format YYYY-MM-DDTHH:MM:SSZ."
@@ -114,6 +120,8 @@ ISO8601 is a string in ISO 8601 format. Returns a Lisp timestamp."
 (defun total-recall--time-init ()
   "Return a Lisp timestamp for January 1, 1970, 00:00:00 UTC."
   (encode-time 0 0 0 1 1 1970 0))
+
+;; Search
 
 (defun total-recall--search (dir ext type-id)
   "Search for files containing TYPE-ID with extension EXT in directory DIR.
@@ -134,6 +142,8 @@ Returns a list of file paths."
           (push (car match) matches))
         (forward-line 1))
       (delete-dups matches))))
+
+;; Measure
 
 (defun total-recall--measure-mk (id time)
   "Build a measure that records ID and TIME.
@@ -186,6 +196,8 @@ TIME is a Lisp timestamp."
 (defun total-recall--skip-measure-p (measure)
   "Return t if MEASURE is a skip measure, else nil."
   (eq (type-of measure) 'total-recall-measure-skip))
+
+;; UI
 
 (defun total-recall--ui-mk ()
   "Build the Total Recall UI."
@@ -279,6 +291,8 @@ ANSWER is a string."
 
       (:state state))))
 
+;; DB
+
 (defun total-recall--db-mk (path)
   "Open an SQLite database at PATH.
 PATH is a string file path. Returns an SQLite database handle."
@@ -361,6 +375,8 @@ Returns the result of the operation."
      t)
 
     (_ (error "Unknown message: %S" msg))))
+
+;; Exercise
 
 (defun total-recall--exercise-mk (subject id question answer)
   "Create an exercise with SUBJECT, ID, QUESTION, and ANSWER.
@@ -450,6 +466,8 @@ or (:scheduled DB). Returns the corresponding value (e.g., string or timestamp).
                   (result-secs (+ t-secs delta-secs)))
              (seconds-to-time result-secs))))))))
 
+;; Filesystem
+
 (defun total-recall--fs-list-exercises (path)
   "List exercises in PATH.
 PATH is a string file or directory path. Returns a list of exercise structures."
@@ -529,6 +547,8 @@ Returns a list of exercise structures for :list-exercises."
                 (push (total-recall--exercise-mk subject id question answer) exercises))))
           (format "TYPE=\"%s\"" total-recall-type-id))
          (reverse exercises))))))
+
+;; total-recall
 
 ;;;###autoload
 (defun total-recall ()
