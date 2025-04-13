@@ -104,7 +104,7 @@ This package provides `total-recall' for spaced repetition in Emacs."
 (defun total-recall--time-to-iso8601 (time)
   "Convert TIME to an ISO 8601 formatted string.
 TIME is a Lisp timestamp. Returns a string in the format YYYY-MM-DDTHH:MM:SSZ."
-  (format-time-string "%Y-%m-%dT%H:%M:%SZ" (time-convert time 'list) t))
+  (format-time-string "%FT%TZ" (time-convert time 'list) t))
 
 (defun total-recall--iso8601-to-time (iso8601)
   "Convert ISO8601 string to a Lisp timestamp.
@@ -238,7 +238,7 @@ ANSWER is a string."
         (state (aref ui 3)))
     (select-frame-set-input-focus frame)
     (switch-to-buffer buffer)
-    (unless (eq major-mode 'org-mode) (org-mode))
+    (unless (derived-mode-p 'org-mode) (org-mode))
     (pcase msg
       (:init
        (erase-buffer)
