@@ -19,17 +19,19 @@
 ;;
 ;; This package provides `total-recall'.
 ;; 
-;; The command `M-x total-recall' uses Ripgrep to search for Org files in the directory
-;; specified by `total-recall-root-dir' that contain exercises. For each file found, it
-;; lists the exercises and presents a user interface to display them.
+;; The command `M-x total-recall' uses Ripgrep to search for Org files in
+;; the directory specified by `total-recall-root-dir' that contain
+;; exercises. For each file found, it lists the exercises and presents a
+;; user interface to display them.
 ;; 
-;; For each exercise, it first shows the question, followed by the answer. The user's
-;; performance — whether they provided a correct answer — is recorded and stored in an
-;; SQLite database at `total-recall-database'. This data determines whether an exercise
+;; For each exercise, it first shows the question, followed by the
+;; answer. The user's performance — whether they provided a correct
+;; answer — is recorded and stored in an SQLite database at
+;; `total-recall-database'. This data determines whether an exercise
 ;; should be reviewed sooner or later.
 ;; 
-;; An exercise is defined as any heading in an Org file that meets the following
-;; criteria:
+;; An exercise is defined as any heading in an Org file that meets the
+;; following criteria:
 ;; - It has a `TYPE' property with the value `total-recall-type-id'.
 ;; - It has an `ID' property with a UUID value.
 ;; - It contains two subheadings:
@@ -51,9 +53,9 @@
 ;; 
 ;; ** Answer
 ;; 
-;; An extensible, customizable, free/libre text editor — and more.
-;; At its core is an interpreter for Emacs Lisp, a dialect of the Lisp programming language
-;; with extensions to support text editing.
+;; An extensible, customizable, free/libre text editor — and more.  At
+;; its core is an interpreter for Emacs Lisp, a dialect of the Lisp
+;; programming language with extensions to support text editing.
 ;;
 ;;; Code:
 
@@ -134,136 +136,148 @@ Returns a list of file paths."
       (delete-dups matches))))
 
 (defun total-recall--measure-mk (id time)
-  "Create a measure structure with ID and TIME.
+  "Build a measure that records ID and TIME.
 ID is a string identifier.
-TIME is a Lisp timestamp.
-Returns a measure structure."
-  (list :measure id time))
+TIME is a Lisp timestamp."
+  (record 'total-recall-measure id time))
 
 (defun total-recall--measure-p (measure)
   "Return t if MEASURE is a valid measure structure, else nil."
-  (memq (car-safe measure) '(:measure :success :failure :skip)))
+  (memq (type-of measure)
+        '(total-recall-measure
+          total-recall-measure-success
+          total-recall-measure-failure
+          total-recall-measure-skip)))
 
 (defun total-recall--measure-id (measure)
-  "Return the ID of MEASURE.
-MEASURE is a measure structure. Returns a string."
+  "Return the ID of MEASURE."
   (total-recall--measure-rcv measure :id))
 
 (defun total-recall--measure-time (measure)
-  "Return the timestamp of MEASURE.
-MEASURE is a measure structure. Returns a Lisp timestamp."
+  "Return the time of MEASURE."
   (total-recall--measure-rcv measure :time))
 
 (defun total-recall--measure-rcv (measure msg)
-  "Extract information from MEASURE based on MSG.
-MEASURE is a measure structure. MSG is a symbol (:id or :time).
-Returns the corresponding value."
-  (pcase-let (((or `(:measure ,id ,time)
-                   `(_ :measure ,id ,time))
-               measure))
+  "Implement the MEASURE interface selected by MSG."
     (pcase msg
-      (:id id)
-      (:time time))))
+      (:id (aref measure 1))
+      (:time (aref measure 2))))
 
 (defun total-recall--success-measure-mk (id time)
-  "Create a success measure with ID and TIME.
-ID is a string identifier. TIME is a Lisp timestamp. Returns a success measure."
-  (cons :success (total-recall--measure-mk id time)))
+  "Build a success measure that records ID and TIME."
+  (record 'total-recall-measure-success id time))
 
 (defun total-recall--success-measure-p (measure)
   "Return t if MEASURE is a success measure, else nil."
-  (eq (car-safe measure) :success))
+  (eq (type-of measure) 'total-recall-measure-success))
 
 (defun total-recall--failure-measure-mk (id time)
-  "Create a failure measure with ID and TIME.
-ID is a string identifier. TIME is a Lisp timestamp. Returns a failure measure."
-  (cons :failure (total-recall--measure-mk id time)))
+  "Build a failure measure that records ID and TIME."
+  (record 'total-recall-measure-failure id time))
 
 (defun total-recall--failure-measure-p (measure)
   "Return t if MEASURE is a failure measure, else nil."
-  (eq (car-safe measure) :failure))
+  (eq (type-of measure) 'total-recall-measure-failure))
 
 (defun total-recall--skip-measure-mk (id time)
-  "Create a skip measure with ID and TIME.
-ID is a string identifier. TIME is a Lisp timestamp. Returns a skip measure."
-  (cons :skip (total-recall--measure-mk id time)))
+  "Build a skip measure that records ID and TIME."
+  (record 'total-recall-measure-skip id time))
 
 (defun total-recall--skip-measure-p (measure)
   "Return t if MEASURE is a skip measure, else nil."
-  (eq (car-safe measure) :skip))
+  (eq (type-of measure) 'total-recall-measure-skip))
 
 (defun total-recall--ui-mk ()
-  "Create a Total Recall UI.
-Returns a UI structure containing a buffer and frame."
+  "Build the Total Recall UI."
   (let ((frame (make-frame `((width . ,total-recall-window-width)
                              (height . ,total-recall-window-height))))
         (buffer (get-buffer-create "*total-recall*")))
-    (list :ui buffer frame)))
+    (record 'total-recall-ui buffer frame :state)))
 
 (defun total-recall--ui-p (ui)
   "Return t if UI is a valid UI structure, else nil."
-  (eq (car-safe ui) :ui))
+  (eq (type-of ui) 'total-recall-ui))
+
+(defun total-recall--ui-set-state (ui state)
+  "Set the state of UI to STATE and return UI."
+  (aset ui 3 state)
+  ui)
+
+(defun total-recall--ui-init (ui)
+  "Initialize UI."
+  (total-recall--ui-rcv ui :init))
 
 (defun total-recall--ui-no-exercises (ui)
-  "Display a /no exercises/ message in UI.
-UI is a UI structure."
+  "Display a /no exercises/ message in UI."
   (total-recall--ui-rcv ui :no-exercises))
 
-(defun total-recall--ui-display-question (ui exercise)
-  "Display EXERCISE's question in UI.
-UI is a UI structure. EXERCISE is an exercise structure."
-  (total-recall--ui-rcv ui `(:display :question ,exercise)))
+(defun total-recall--ui-display-question (ui id subject question)
+  "Display QUESTION identified by ID about SUBJECT in UI.
+QUESTION is a string.
+SUBJECT is a string."
+  (total-recall--ui-rcv ui `(:display :question ,id ,subject ,question)))
 
-(defun total-recall--ui-display-answer (ui exercise)
-  "Display EXERCISE's question and answer in UI.
-UI is a UI structure. EXERCISE is an exercise structure."
-  (total-recall--ui-rcv ui `(:display :answer ,exercise)))
+(defun total-recall--ui-display-answer (ui answer)
+  "Display ANSWER in UI.
+ANSWER is a string."
+  (total-recall--ui-rcv ui `(:display :answer ,answer)))
+
+(defun total-recall--ui-state (ui)
+  "Return the state of UI."
+  (total-recall--ui-rcv ui :state))
 
 (defun total-recall--ui-kill (ui)
-  "Close UI by killing its buffer and frame.
-UI is a UI structure."
+  "Close UI."
   (total-recall--ui-rcv ui :kill))
 
 (defun total-recall--ui-rcv (ui msg)
-  "Handle MSG for UI.
-UI is a UI structure.
-MSG is a message.
-Signals an error if UI is invalid."
+  "Implement the UI API selected by MSG."
   (unless (total-recall--ui-p ui) (error "Not a UI structure"))
-  (pcase-let ((`(:ui ,buffer ,frame) ui))
+  (let ((buffer (aref ui 1))
+        (frame (aref ui 2))
+        (state (aref ui 3)))
     (select-frame-set-input-focus frame)
     (switch-to-buffer buffer)
-    (org-mode)
-    (erase-buffer)
-    (insert "* Total Recall *\n\n\n")
+    (unless (eq major-mode 'org-mode) (org-mode))
     (pcase msg
+      (:init
+       (erase-buffer)
+       (insert "* Total Recall *\n\n\n")
+       (goto-char (point-min))
+       (total-recall--ui-set-state ui :init))
+
       (:no-exercises
        (save-window-excursion
-         (insert "No exercises found.\n"))
-       :noop)
+         (unless (eq (total-recall--ui-state ui) :init)
+           (total-recall--ui-rcv ui :init))
+         (goto-char (point-max))
+         (insert "No exercises found.\n")
+         (goto-char (point-min)))
+       (total-recall--ui-set-state ui :no-exercises))
 
-      (`(:display :question ,ex)
-       (let ((name (total-recall--exercise-name ex))
-             (id (total-recall--exercise-id ex))
-             (question (total-recall--exercise-question ex)))
-         (insert (format "[[ref:%s][%s]]\n\n\n" id name))
-         (insert (format "%s\n\n\n" question))
-         (goto-char (point-min))))
+      (`(:display :question ,id ,subject ,question)
+       (unless (eq (total-recall--ui-state ui) :init)
+         (total-recall--ui-rcv ui :init))
+       (goto-char (point-max))
+       (insert (format "[[ref:%s][%s]]\n\n\n" id subject))
+       (insert (format "%s\n\n\n" question))
+       (goto-char (point-min))
+       (total-recall--ui-set-state ui :question))
 
-      (`(:display :answer ,ex)
-       (let ((name (total-recall--exercise-name ex))
-             (id (total-recall--exercise-id ex))
-             (question (total-recall--exercise-question ex))
-             (answer (total-recall--exercise-answer ex)))
-         (insert (format "[[ref:%s][%s]]\n\n\n" id name))
-         (insert (format "%s\n\n\n" question))
-         (insert (format "%s\n\n\n" answer))
-         (goto-char (point-min))))
+      (`(:display :answer ,answer)
+       (unless (eq (total-recall--ui-state ui) :question)
+         (error "UI state is not :question"))
+       (goto-char (point-max))
+       (insert (format "%s\n\n\n" answer))
+       (goto-char (point-min))
+       (total-recall--ui-set-state ui :answer))
 
       (:kill
        (kill-buffer buffer)
        (delete-frame frame)
-       :noop))))
+       (total-recall--ui-set-state ui :dead))
+
+      (:state state))))
 
 (defun total-recall--db-mk (path)
   "Open an SQLite database at PATH.
@@ -348,24 +362,24 @@ Returns the result of the operation."
 
     (_ (error "Unknown message: %S" msg))))
 
-(defun total-recall--exercise-mk (name id question answer)
-  "Create an exercise with NAME, ID, QUESTION, and ANSWER.
-NAME, ID, QUESTION, and ANSWER are strings. Signals an error if any argument
+(defun total-recall--exercise-mk (subject id question answer)
+  "Create an exercise with SUBJECT, ID, QUESTION, and ANSWER.
+SUBJECT, ID, QUESTION, and ANSWER are strings. Signals an error if any argument
 is not a string. Returns an exercise structure."
-  (unless (stringp name) (error "Name is not a string"))
+  (unless (stringp subject) (error "Subject is not a string"))
   (unless (stringp id) (error "ID is not a string"))
   (unless (stringp question) (error "Question is not a string"))
   (unless (stringp answer) (error "Answer is not a string"))
-  (list :exercise name id question answer))
+  (record 'total-recall-exercise subject id question answer))
 
 (defun total-recall--exercise-p (ex)
   "Return t if EX is an exercise structure, else nil."
-  (eq (car-safe ex) :exercise))
+  (eq (type-of ex) 'total-recall-exercise))
 
-(defun total-recall--exercise-name (exercise)
-  "Return the name of EXERCISE.
+(defun total-recall--exercise-subject (exercise)
+  "Return the subject of EXERCISE.
 EXERCISE is an exercise structure. Returns a string."
-  (total-recall--exercise-rcv exercise :name))
+  (total-recall--exercise-rcv exercise :subject))
 
 (defun total-recall--exercise-id (exercise)
   "Return the ID of EXERCISE.
@@ -390,11 +404,15 @@ Returns a Lisp timestamp."
 
 (defun total-recall--exercise-rcv (exercise msg)
   "Handle MSG for EXERCISE.
-EXERCISE is an exercise structure. MSG can be :name, :id, :question, :answer,
+EXERCISE is an exercise structure. MSG can be :subject, :id, :question, :answer,
 or (:scheduled DB). Returns the corresponding value (e.g., string or timestamp)."
-  (pcase-let ((`(:exercise ,name ,id ,question ,answer) exercise))
+  (let ((subject (aref exercise 1))
+        (id (aref exercise 2))
+        (question (aref exercise 3))
+        (answer (aref exercise 4)))
+
     (pcase msg
-      (:name name)
+      (:subject subject)
 
       (:id id)
 
@@ -482,7 +500,7 @@ Returns a list of exercise structures for :list-exercises."
          (org-map-entries
           (lambda ()
             (let ((id (org-entry-get nil "ID"))
-                  (name (org-format-outline-path (org-get-outline-path t) 10000))
+                  (subject (org-format-outline-path (org-get-outline-path t) 10000))
                   question answer)
               (save-restriction
                 (org-narrow-to-subtree)
@@ -508,7 +526,7 @@ Returns a list of exercise structures for :list-exercises."
                           (string-trim
                            (buffer-substring-no-properties (point) (mark))))
                     (while (< (org-current-level) init-lvl) (org-demote-subtree))))
-                (push (total-recall--exercise-mk name id question answer) exercises))))
+                (push (total-recall--exercise-mk subject id question answer) exercises))))
           (format "TYPE=\"%s\"" total-recall-type-id))
          (reverse exercises))))))
 
@@ -518,17 +536,19 @@ Returns a list of exercise structures for :list-exercises."
 
 This package provides `total-recall'.
 
-The command `M-x total-recall' uses Ripgrep to search for Org files in the directory
-specified by `total-recall-root-dir' that contain exercises. For each file found, it
-lists the exercises and presents a user interface to display them.
+The command `M-x total-recall' uses Ripgrep to search for Org files in
+the directory specified by `total-recall-root-dir' that contain
+exercises. For each file found, it lists the exercises and presents a
+user interface to display them.
 
-For each exercise, it first shows the question, followed by the answer. The user's
-performance — whether they provided a correct answer — is recorded and stored in an
-SQLite database at `total-recall-database'. This data determines whether an exercise
+For each exercise, it first shows the question, followed by the
+answer. The user's performance — whether they provided a correct
+answer — is recorded and stored in an SQLite database at
+`total-recall-database'. This data determines whether an exercise
 should be reviewed sooner or later.
 
-An exercise is defined as any heading in an Org file that meets the following
-criteria:
+An exercise is defined as any heading in an Org file that meets the
+following criteria:
 - It has a `TYPE' property with the value `total-recall-type-id'.
 - It has an `ID' property with a UUID value.
 - It contains two subheadings:
@@ -550,12 +570,12 @@ Example of an exercise:
 
 ** Answer
 
-An extensible, customizable, free/libre text editor — and more.
-At its core is an interpreter for Emacs Lisp, a dialect of the Lisp programming language
-with extensions to support text editing."
+An extensible, customizable, free/libre text editor — and more.  At
+its core is an interpreter for Emacs Lisp, a dialect of the Lisp
+programming language with extensions to support text editing."
   (interactive)
 
-  (unless (executable-find locs-and-refs-ripgrep-cmd)
+  (unless (executable-find total-recall-ripgrep-cmd)
     (user-error "Ripgrep (rg) is not installed. Please install it to use this package"))
 
   (let ((exercises (total-recall--fs-list-exercises total-recall-root-dir))
@@ -566,13 +586,18 @@ with extensions to support text editing."
         exercise
         scheduled
         choice)
+    (total-recall--ui-init ui)
     (if (null exercises)
         (total-recall--ui-no-exercises ui)
       (while exercises
         (setq exercise (pop exercises))
         (setq scheduled (total-recall--exercise-scheduled exercise db))
         (when (time-less-p scheduled now)
-          (total-recall--ui-display-question ui exercise)
+          (total-recall--ui-display-question
+           ui
+           (total-recall--exercise-id exercise)
+           (total-recall--exercise-subject exercise)
+           (total-recall--exercise-question exercise))
           (setq choice
                 (car
                  (read-multiple-choice
@@ -582,7 +607,7 @@ with extensions to support text editing."
                     (?q "Quit" "Quit Total Recall")))))
           (pcase choice
             (?r
-             (total-recall--ui-display-answer ui exercise)
+             (total-recall--ui-display-answer ui (total-recall--exercise-answer exercise))
              (setq choice
                    (car
                     (read-multiple-choice
