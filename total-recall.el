@@ -4,7 +4,7 @@
 ;; Author: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Maintainer: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Homepage: https://github.com/phf-1/total-recall
-;; Package-Version: 0.1
+;; Package-Version: 0.2
 ;; Package-Requires: ((emacs "29.1"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;;
@@ -600,7 +600,6 @@ programming language with extensions to support text editing."
 
   (let ((exercises (total-recall--fs-list-exercises total-recall-root-dir))
         (db (total-recall--db-mk total-recall-database))
-        (now (current-time))
         (ui (total-recall--ui-mk))
         (use-dialog-box nil)
         exercise
@@ -612,7 +611,7 @@ programming language with extensions to support text editing."
       (while exercises
         (setq exercise (pop exercises))
         (setq scheduled (total-recall--exercise-scheduled exercise db))
-        (when (time-less-p scheduled now)
+        (when (time-less-p scheduled (current-time))
           (total-recall--ui-display-question
            ui
            (total-recall--exercise-id exercise)
@@ -637,9 +636,9 @@ programming language with extensions to support text editing."
                        (?q "Quit" "Quit Total Recall")))))
              (pcase choice
                (?s
-                (total-recall--db-save db (total-recall--success-measure-mk (total-recall--exercise-id exercise) now)))
+                (total-recall--db-save db (total-recall--success-measure-mk (total-recall--exercise-id exercise) (current-time))))
                (?f
-                (total-recall--db-save db (total-recall--failure-measure-mk (total-recall--exercise-id exercise) now)))
+                (total-recall--db-save db (total-recall--failure-measure-mk (total-recall--exercise-id exercise) (current-time))))
                (?q
                 (setq exercises nil))))
             (?s
