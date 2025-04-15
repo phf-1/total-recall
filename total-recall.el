@@ -4,7 +4,7 @@
 ;; Author: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Maintainer: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Homepage: https://github.com/phf-1/total-recall
-;; Package-Version: 0.2
+;; Package-Version: 0.3
 ;; Package-Requires: ((emacs "29.1"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;;
@@ -466,6 +466,73 @@ or (:scheduled DB). Returns the corresponding value (e.g., string or timestamp).
                   (result-secs (+ t-secs delta-secs)))
              (seconds-to-time result-secs))))))))
 
+;; Node
+
+(defun total-recall--node-depth-first (node func)
+  "Return the list of results from calling FUNC on NODE and its children, depth-first."
+  (let ((head
+         (mapcan
+          (lambda (node) (total-recall--node-depth-first node func))
+          (org-element-contents node)))
+        (last (funcall func node)))
+    (pcase last
+      (:err head)
+      (_ (append head (list last))))))
+
+(defun total-recall--node-subject (node)
+  "Return the subject of NODE.
+A subject is a string like A/B/C, where A and B are the titles of the
+parents of the node, and C is the title of the node. A node's title
+is the string of the relevant headline."
+  (string-join
+   (reverse
+    (org-element-lineage-map node
+        (lambda (parent) (org-element-property :raw-value parent))
+      '(headline)
+      t))
+   "/"))
+
+(defun total-recall--node-to-string (node)
+  "Return the string associated with NODE, leveled to level 1."
+  (replace-regexp-in-string
+   "\\`\\*+" "*"
+   (string-trim
+    (buffer-substring-no-properties
+     (org-element-property :begin node)
+     (org-element-property :end node)))))
+
+(defun total-recall--node-to-exercise (node)
+  "Return an exercise built from NODE, or `:err' if not possible.
+If NODE is expected to be an exercise based on its type but its
+structure is invalid, raise an error."
+  (let (should-be-exercise id list-headline question answer)
+
+    (setq should-be-exercise
+          (and (eq (org-element-type node) 'headline)
+               (string= (org-element-property :TYPE node) total-recall-type-id)))
+
+    (if should-be-exercise
+        (progn
+          (setq id (org-element-property :ID node))
+          (unless (stringp id) (error "Exercise has no ID property"))
+          (setq list-headline
+                (seq-filter
+                 (lambda (child) (eq (org-element-type child) 'headline))
+                 (org-element-contents node)))
+          (pcase (length list-headline)
+            (0 (error "Exercise has no question nor answer. id = %s" id))
+            (1 (error "Exercise has no answer. id = %s" id))
+            (_
+             (setq question (total-recall--node-to-string (car list-headline)))
+             (setq answer (total-recall--node-to-string (cadr list-headline)))))
+
+          (total-recall--exercise-mk
+           (total-recall--node-subject node)
+           id
+           question
+           answer))
+      :err)))
+
 ;; Filesystem
 
 (defun total-recall--fs-list-exercises (path)
@@ -513,40 +580,10 @@ Returns a list of exercise structures for :list-exercises."
        (insert-file-contents file)
        (org-mode)
        (org-fold-show-all)
-       (let ((org-element-use-cache nil)
-             (exercises '()))
-         (org-map-entries
-          (lambda ()
-            (let ((id (org-entry-get nil "ID"))
-                  (subject (org-format-outline-path (org-get-outline-path t) 10000))
-                  question answer)
-              (save-restriction
-                (org-narrow-to-subtree)
-                (org-next-visible-heading 1)
-                (unless (org-at-heading-p) (error "Question not found"))
-                (save-restriction
-                  (org-narrow-to-subtree)
-                  (let ((init-lvl (org-current-level)))
-                    (while (> (org-current-level) 1) (org-promote-subtree))
-                    (org-mark-subtree)
-                    (setq question
-                          (string-trim
-                           (buffer-substring-no-properties (point) (mark))))
-                    (while (< (org-current-level) init-lvl) (org-demote-subtree))))
-                (org-goto-sibling)
-                (unless (org-at-heading-p) (error "Answer not found"))
-                (save-restriction
-                  (org-narrow-to-subtree)
-                  (let ((init-lvl (org-current-level)))
-                    (while (> (org-current-level) 1) (org-promote-subtree))
-                    (org-mark-subtree)
-                    (setq answer
-                          (string-trim
-                           (buffer-substring-no-properties (point) (mark))))
-                    (while (< (org-current-level) init-lvl) (org-demote-subtree))))
-                (push (total-recall--exercise-mk subject id question answer) exercises))))
-          (format "TYPE=\"%s\"" total-recall-type-id))
-         (reverse exercises))))))
+       (let ((org-element-use-cache nil))
+         (total-recall--node-depth-first
+          (org-element-parse-buffer 'greater-element)
+          #'total-recall--node-to-exercise))))))
 
 ;; total-recall
 
