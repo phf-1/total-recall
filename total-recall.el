@@ -20,32 +20,28 @@
 ;; This package provides `total-recall'.
 ;; 
 ;; The command `M-x total-recall' uses Ripgrep to search for Org files in
-;; the directory specified by `total-recall-root-dir' that contain
-;; exercises. For each file found, it lists the exercises and presents a
-;; user interface to display them.
+;; the directory set by `total-recall-root-dir' that contain
+;; exercises. It lists the exercises from each file and provides a user
+;; interface to view them. The list of exercises follows a depth first
+;; order /i.e./ a bottom-up review order.
 ;; 
-;; For each exercise, it first shows the question, followed by the
-;; answer. The user's performance — whether they provided a correct
-;; answer — is recorded and stored in an SQLite database at
-;; `total-recall-database'. This data determines whether an exercise
-;; should be reviewed sooner or later.
+;; Each exercise displays its question first, followed by the answer. The
+;; user's performance—whether they answered correctly—is recorded in an
+;; SQLite database at `total-recall-database'. This data determines when
+;; an exercise should be reviewed next.
 ;; 
-;; An exercise is defined as any heading in an Org file that meets the
-;; following criteria:
-;; - It has a `TYPE' property with the value `total-recall-type-id'.
-;; - It has an `ID' property with a UUID value.
-;; - It contains two subheadings:
-;;   - The first subheading encodes a question.
-;;   - The second subheading encodes an answer.
-;; - The file is located under `total-recall-root-dir'.
+;; An exercise is any Org file heading that meets these criteria:
+;; - Has a `TYPE' property set to `total-recall-type-id'.
+;; - Has an `ID' property with a UUID value.
+;; - Contains two subheadings:
+;;   - The first subheading is the question.
+;;   - The second subheading is the answer.
+;; - Is located in `total-recall-root-dir'.
 ;; 
 ;; Example of an exercise:
 ;; 
+;; #+begin_src org
 ;; * Emacs
-;; :PROPERTIES: 
-;; :TYPE: b0d53cd4-ad89-4333-9ef1-4d9e0995a4d8
-;; :ID: ced2b42b-bfba-4af5-913c-9d903ac78433
-;; :END:
 ;; 
 ;; ** What is GNU Emacs?
 ;; 
@@ -53,9 +49,36 @@
 ;; 
 ;; ** Answer
 ;; 
-;; An extensible, customizable, free/libre text editor — and more.  At
-;; its core is an interpreter for Emacs Lisp, a dialect of the Lisp
-;; programming language with extensions to support text editing.
+;; An extensible, customizable, free/libre text editor—and more. Its core
+;; is an interpreter for Emacs Lisp, a Lisp dialect with extensions for
+;; text editing.
+;; #+end_src
+;; 
+;; Exercises can be embedded in any Org Mode document for context:
+;; 
+;; #+begin_src org
+;; * Title
+;; ** Section
+;; *** Exercise 3
+;; *** Exercise 4
+;; *** Sub-section
+;; **** Exercise 1
+;; **** Exercise 2
+;; #+end_src
+;; 
+;; Which would lead to this review order:
+;; 
+;; 1) Title/Section/Sub-section/Exercise 1
+;; 2) Title/Section/Sub-section/Exercise 2
+;; 3) Title/Section/Exercise 3
+;; 4) Title/Section/Exercise 4
+;; 
+;; Which may be pruned by the scheduling algorithm to:
+;; 
+;; 1) Title/Section/Sub-section/Exercise 1
+;; 2) Title/Section/Exercise 4
+;; 
+;; Depending on accumulated data so far.
 ;;
 ;;; Code:
 
@@ -594,32 +617,28 @@ Returns a list of exercise structures for :list-exercises."
 This package provides `total-recall'.
 
 The command `M-x total-recall' uses Ripgrep to search for Org files in
-the directory specified by `total-recall-root-dir' that contain
-exercises. For each file found, it lists the exercises and presents a
-user interface to display them.
+the directory set by `total-recall-root-dir' that contain
+exercises. It lists the exercises from each file and provides a user
+interface to view them. The list of exercises follows a depth first
+order /i.e./ a bottom-up review order.
 
-For each exercise, it first shows the question, followed by the
-answer. The user's performance — whether they provided a correct
-answer — is recorded and stored in an SQLite database at
-`total-recall-database'. This data determines whether an exercise
-should be reviewed sooner or later.
+Each exercise displays its question first, followed by the answer. The
+user's performance—whether they answered correctly—is recorded in an
+SQLite database at `total-recall-database'. This data determines when
+an exercise should be reviewed next.
 
-An exercise is defined as any heading in an Org file that meets the
-following criteria:
-- It has a `TYPE' property with the value `total-recall-type-id'.
-- It has an `ID' property with a UUID value.
-- It contains two subheadings:
-  - The first subheading encodes a question.
-  - The second subheading encodes an answer.
-- The file is located under `total-recall-root-dir'.
+An exercise is any Org file heading that meets these criteria:
+- Has a `TYPE' property set to `total-recall-type-id'.
+- Has an `ID' property with a UUID value.
+- Contains two subheadings:
+  - The first subheading is the question.
+  - The second subheading is the answer.
+- Is located in `total-recall-root-dir'.
 
 Example of an exercise:
 
+#+begin_src org
 * Emacs
-:PROPERTIES: 
-:TYPE: b0d53cd4-ad89-4333-9ef1-4d9e0995a4d8
-:ID: ced2b42b-bfba-4af5-913c-9d903ac78433
-:END:
 
 ** What is GNU Emacs?
 
@@ -627,9 +646,36 @@ Example of an exercise:
 
 ** Answer
 
-An extensible, customizable, free/libre text editor — and more.  At
-its core is an interpreter for Emacs Lisp, a dialect of the Lisp
-programming language with extensions to support text editing."
+An extensible, customizable, free/libre text editor—and more. Its core
+is an interpreter for Emacs Lisp, a Lisp dialect with extensions for
+text editing.
+#+end_src
+
+Exercises can be embedded in any Org Mode document for context:
+
+#+begin_src org
+* Title
+** Section
+*** Exercise 3
+*** Exercise 4
+*** Sub-section
+**** Exercise 1
+**** Exercise 2
+#+end_src
+
+Which would lead to this review order:
+
+1) Title/Section/Sub-section/Exercise 1
+2) Title/Section/Sub-section/Exercise 2
+3) Title/Section/Exercise 3
+4) Title/Section/Exercise 4
+
+Which may be pruned by the scheduling algorithm to:
+
+1) Title/Section/Sub-section/Exercise 1
+2) Title/Section/Exercise 4
+
+Depending on accumulated data so far."
   (interactive)
 
   (unless (executable-find total-recall-ripgrep-cmd)
