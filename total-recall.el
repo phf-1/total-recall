@@ -210,11 +210,6 @@ TIME is a Lisp timestamp."
   "Return t if UI is a valid UI structure, else nil."
   (eq (type-of ui) 'total-recall-ui))
 
-(defun total-recall--ui-set-state (ui state)
-  "Set the state of UI to STATE and return UI."
-  (aset ui 3 state)
-  ui)
-
 (defun total-recall--ui-init (ui)
   "Initialize UI."
   (total-recall--ui-rcv ui :init))
@@ -256,7 +251,8 @@ ANSWER is a string."
        (erase-buffer)
        (insert "* Total Recall *\n\n\n")
        (goto-char (point-min))
-       (total-recall--ui-set-state ui :init))
+       (aset ui 3 :init)
+       ui)
 
       (:no-exercises
        (save-window-excursion
@@ -265,7 +261,8 @@ ANSWER is a string."
          (goto-char (point-max))
          (insert "No exercises found.\n")
          (goto-char (point-min)))
-       (total-recall--ui-set-state ui :no-exercises))
+       (aset ui 3 :no-exercises)
+       ui)
 
       (`(:display :question ,id ,subject ,question)
        (unless (eq (total-recall--ui-state ui) :init)
@@ -274,7 +271,8 @@ ANSWER is a string."
        (insert (format "[[ref:%s][%s]]\n\n\n" id subject))
        (insert (format "%s\n\n\n" question))
        (goto-char (point-min))
-       (total-recall--ui-set-state ui :question))
+       (aset ui 3 :question)
+       ui)
 
       (`(:display :answer ,answer)
        (unless (eq (total-recall--ui-state ui) :question)
@@ -282,12 +280,14 @@ ANSWER is a string."
        (goto-char (point-max))
        (insert (format "%s\n\n\n" answer))
        (goto-char (point-min))
-       (total-recall--ui-set-state ui :answer))
+       (aset ui 3 :answer)
+       ui)
 
       (:kill
        (kill-buffer buffer)
        (delete-frame frame)
-       (total-recall--ui-set-state ui :dead))
+       (aset ui 3 :dead)
+       ui)
 
       (:state state))))
 
