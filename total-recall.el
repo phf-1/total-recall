@@ -59,26 +59,28 @@
 ;; #+begin_src org
 ;; * Title
 ;; ** Section
-;; *** Exercise 3
-;; *** Exercise 4
 ;; *** Sub-section
-;; **** Exercise 1
-;; **** Exercise 2
+;; **** Q&A
+;; ***** Exercise 1
+;; ***** Exercise 2
+;; *** Q&A
+;; **** Exercise 3
+;; **** Exercise 4
 ;; #+end_src
 ;; 
-;; Which would lead to this review order:
+;; which would lead to this review order:
 ;; 
-;; 1) Title/Section/Sub-section/Exercise 1
-;; 2) Title/Section/Sub-section/Exercise 2
-;; 3) Title/Section/Exercise 3
-;; 4) Title/Section/Exercise 4
+;; 1) Title/Section/Sub-section/Q&A/Exercise 1
+;; 2) Title/Section/Sub-section/Q&A/Exercise 2
+;; 3) Title/Section/Q&A/Exercise 3
+;; 4) Title/Section/Q&A/Exercise 4
 ;; 
-;; Which may be pruned by the scheduling algorithm to:
+;; which may be pruned by the scheduling algorithm to:
 ;; 
-;; 1) Title/Section/Sub-section/Exercise 1
-;; 2) Title/Section/Exercise 4
+;; 1) Title/Section/Sub-section/Q&A/Exercise 1
+;; 2) Title/Section/Q&A/Exercise 4
 ;; 
-;; Depending on accumulated data so far.
+;; depending on accumulated data so far.
 ;;
 ;;; Code:
 
@@ -656,26 +658,28 @@ Exercises can be embedded in any Org Mode document for context:
 #+begin_src org
 * Title
 ** Section
-*** Exercise 3
-*** Exercise 4
 *** Sub-section
-**** Exercise 1
-**** Exercise 2
+**** Q&A
+***** Exercise 1
+***** Exercise 2
+*** Q&A
+**** Exercise 3
+**** Exercise 4
 #+end_src
 
-Which would lead to this review order:
+which would lead to this review order:
 
-1) Title/Section/Sub-section/Exercise 1
-2) Title/Section/Sub-section/Exercise 2
-3) Title/Section/Exercise 3
-4) Title/Section/Exercise 4
+1) Title/Section/Sub-section/Q&A/Exercise 1
+2) Title/Section/Sub-section/Q&A/Exercise 2
+3) Title/Section/Q&A/Exercise 3
+4) Title/Section/Q&A/Exercise 4
 
-Which may be pruned by the scheduling algorithm to:
+which may be pruned by the scheduling algorithm to:
 
-1) Title/Section/Sub-section/Exercise 1
-2) Title/Section/Exercise 4
+1) Title/Section/Sub-section/Q&A/Exercise 1
+2) Title/Section/Q&A/Exercise 4
 
-Depending on accumulated data so far."
+depending on accumulated data so far."
   (interactive)
 
   (unless (executable-find total-recall-ripgrep-cmd)
