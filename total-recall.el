@@ -88,7 +88,7 @@
 ;; [[ref:<ExerciseID>][A/B/C]]
 ;; 
 ;; When interpreted with the `locs-and-refs' package, it lets you display
-;; the exercise in context in an other frame.
+;; the exercise in context in another frame.
 ;;
 ;;; Code:
 
