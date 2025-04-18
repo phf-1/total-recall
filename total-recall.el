@@ -4,7 +4,7 @@
 ;; Author: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Maintainer: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Homepage: https://github.com/phf-1/total-recall
-;; Package-Version: 0.3
+;; Package-Version: 0.4
 ;; Package-Requires: ((emacs "29.1"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;;
@@ -254,10 +254,6 @@ SUBJECT is a string."
 ANSWER is a string."
   (total-recall--ui-rcv ui `(:display :answer ,answer)))
 
-(defun total-recall--ui-state (ui)
-  "Return the state of UI."
-  (total-recall--ui-rcv ui :state))
-
 (defun total-recall--ui-kill (ui)
   "Close UI."
   (total-recall--ui-rcv ui :kill))
@@ -270,51 +266,51 @@ ANSWER is a string."
         (state (aref ui 3)))
     (select-frame-set-input-focus frame)
     (switch-to-buffer buffer)
-    (unless (derived-mode-p 'org-mode) (org-mode))
     (pcase msg
       (:init
+       (unless (eq state :state) (error "state = %s" state))
        (erase-buffer)
+       (unless (derived-mode-p 'org-mode) (org-mode))
        (insert "* Total Recall *\n\n\n")
        (goto-char (point-min))
        (aset ui 3 :init)
        ui)
 
       (:no-exercises
-       (save-window-excursion
-         (unless (eq (total-recall--ui-state ui) :init)
-           (total-recall--ui-rcv ui :init))
+       (unless (eq state :init) (error "state = %s" state))
+       (save-excursion
          (goto-char (point-max))
-         (insert "No exercises found.\n")
-         (goto-char (point-min)))
-       (aset ui 3 :no-exercises)
+         (insert "No exercises found.\n"))
+       (run-with-timer 2 nil (lambda () (total-recall--ui-rcv ui :kill)))
        ui)
 
       (`(:display :question ,id ,subject ,question)
-       (unless (eq (total-recall--ui-state ui) :init)
-         (total-recall--ui-rcv ui :init))
-       (goto-char (point-max))
-       (insert (format "[[ref:%s][%s]]\n\n\n" id subject))
-       (insert (format "%s\n\n\n" question))
-       (goto-char (point-min))
+       (when (memq state '(:question :answer))
+         (aset ui 3 :state)
+         (total-recall--ui-rcv ui :init)
+         (setq state (aref ui 3)))
+
+       (unless (eq state :init) (error "state = %s" state))
+       (save-excursion
+         (goto-char (point-max))
+         (insert (format "[[ref:%s][%s]]\n\n\n" id subject))
+         (insert (format "%s\n\n\n" question)))
        (aset ui 3 :question)
        ui)
 
       (`(:display :answer ,answer)
-       (unless (eq (total-recall--ui-state ui) :question)
-         (error "UI state is not :question"))
-       (goto-char (point-max))
-       (insert (format "%s\n\n\n" answer))
-       (goto-char (point-min))
+       (unless (eq state :question) (error "state = %s" state))
+       (save-excursion
+         (goto-char (point-max))
+         (insert (format "%s\n\n\n" answer)))
        (aset ui 3 :answer)
        ui)
 
       (:kill
-       (kill-buffer buffer)
-       (delete-frame frame)
+       (when (buffer-live-p buffer) (kill-buffer buffer))
+       (when (frame-live-p frame) (delete-frame frame))
        (aset ui 3 :dead)
-       ui)
-
-      (:state state))))
+       ui))))
 
 ;; DB
 
