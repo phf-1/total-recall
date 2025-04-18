@@ -81,6 +81,14 @@
 ;; 2) Title/Section/Q&A/Exercise 4
 ;; 
 ;; depending on accumulated data so far.
+;; 
+;; A reference to the exercise in its original content is displayed
+;; as its "subject" using the format:
+;; 
+;; [[ref:<ExerciseID>][A/B/C]]
+;; 
+;; When interpreted with the `locs-and-refs' package, it lets you display
+;; the exercise in context in an other frame.
 ;;
 ;;; Code:
 
@@ -675,7 +683,15 @@ which may be pruned by the scheduling algorithm to:
 1) Title/Section/Sub-section/Q&A/Exercise 1
 2) Title/Section/Q&A/Exercise 4
 
-depending on accumulated data so far."
+depending on accumulated data so far.
+
+A reference to the exercise in its original content is displayed
+as its "subject" using the format:
+
+[[ref:<ExerciseID>][A/B/C]]
+
+When interpreted with the `locs-and-refs' package, it lets you display
+the exercise in context in an other frame."
   (interactive)
 
   (unless (executable-find total-recall-ripgrep-cmd)
