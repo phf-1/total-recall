@@ -4,7 +4,7 @@
 ;; Author: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Maintainer: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Homepage: https://github.com/phf-1/total-recall
-;; Package-Version: 0.4
+;; Package-Version: 0.5
 ;; Package-Requires: ((emacs "29.1"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;;
@@ -701,22 +701,16 @@ depending on accumulated data so far."
            (total-recall--exercise-subject exercise)
            (total-recall--exercise-question exercise))
           (setq choice
-                (car
-                 (read-multiple-choice
-                  "What would you like to do?"
-                  '((?r "Reveal answer" "Display the answer to the question")
-                    (?s "Skip" "Skip this exercise")
-                    (?q "Quit" "Quit Total Recall")))))
+                (read-char-choice
+                 "Choose: (r) Reveal answer (k) Skip 2 (q) Quit: "
+                 '(?r ?k ?q)))
           (pcase choice
             (?r
              (total-recall--ui-display-answer ui (total-recall--exercise-answer exercise))
              (setq choice
-                   (car
-                    (read-multiple-choice
-                     "What would you like to do?"
-                     '((?s "Success" "You successfully answered the question")
-                       (?f "Failure" "You failed to answer the question")
-                       (?q "Quit" "Quit Total Recall")))))
+                   (read-char-choice
+                    "Choose: (s) Success (f) Failure (q) Quit: "
+                    '(?s ?f ?q)))
              (pcase choice
                (?s
                 (total-recall--db-save db (total-recall--success-measure-mk (total-recall--exercise-id exercise) (current-time))))
@@ -724,7 +718,7 @@ depending on accumulated data so far."
                 (total-recall--db-save db (total-recall--failure-measure-mk (total-recall--exercise-id exercise) (current-time))))
                (?q
                 (setq exercises nil))))
-            (?s
+            (?k
              nil)
             (?q
              (setq exercises nil))))))
