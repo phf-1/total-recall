@@ -718,14 +718,14 @@ the exercise in context in another frame."
            (total-recall--exercise-question exercise))
           (setq choice
                 (read-char-choice
-                 "Choose: (r) Reveal answer (k) Skip 2 (q) Quit: "
+                 "Reveal (r), Skip (k), Quit (q): "
                  '(?r ?k ?q)))
           (pcase choice
             (?r
              (total-recall--ui-display-answer ui (total-recall--exercise-answer exercise))
              (setq choice
                    (read-char-choice
-                    "Choose: (s) Success (f) Failure (q) Quit: "
+                    "Success (s), Failure (f), Quit (q): "
                     '(?s ?f ?q)))
              (pcase choice
                (?s
