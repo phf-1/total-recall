@@ -4,8 +4,8 @@
 ;; Author: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Maintainer: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Homepage: https://github.com/phf-1/total-recall
-;; Package-Version: 0.5
-;; Package-Requires: ((emacs "29.1"))
+;; Package-Version: 0.7
+;; Package-Requires: ((emacs "30.1"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;;
 ;; This program is free software; you can redistribute it and/or modify
@@ -83,7 +83,7 @@
 ;; depending on accumulated data so far.
 ;; 
 ;; A reference to the exercise in its original content is displayed
-;; as its "subject" using the format:
+;; as its subject using the format:
 ;; 
 ;; [[ref:<ExerciseID>][A/B/C]]
 ;; 
@@ -99,6 +99,8 @@
 (require 'org)
 (require 'time-date)
 (require 'parse-time)
+(require 'org-element)
+(require 'org-element-ast)
 
 ;; Configuration
 
@@ -271,26 +273,25 @@ ANSWER is a string."
   (unless (total-recall--ui-p ui) (error "Not a UI structure"))
   (let ((buffer (aref ui 1))
         (frame (aref ui 2))
-        (state (aref ui 3)))
+        (state (aref ui 3))
+        (reply nil))
     (select-frame-set-input-focus frame)
     (switch-to-buffer buffer)
     (pcase msg
       (:init
-       (unless (eq state :state) (error "state = %s" state))
+       (unless (eq state :state) (error "State = %s" state))
        (erase-buffer)
        (unless (derived-mode-p 'org-mode) (org-mode))
        (insert "* Total Recall *\n\n\n")
        (goto-char (point-min))
-       (aset ui 3 :init)
-       ui)
+       (aset ui 3 :init))
 
       (:no-exercises
-       (unless (eq state :init) (error "state = %s" state))
+       (unless (eq state :init) (error "State = %s" state))
        (save-excursion
          (goto-char (point-max))
          (insert "No exercises found.\n"))
-       (run-with-timer 2 nil (lambda () (total-recall--ui-rcv ui :kill)))
-       ui)
+       (run-with-timer 2 nil (lambda () (total-recall--ui-rcv ui :kill))))
 
       (`(:display :question ,id ,subject ,question)
        (when (memq state '(:question :answer))
@@ -298,27 +299,26 @@ ANSWER is a string."
          (total-recall--ui-rcv ui :init)
          (setq state (aref ui 3)))
 
-       (unless (eq state :init) (error "state = %s" state))
+       (unless (eq state :init) (error "State = %s" state))
        (save-excursion
          (goto-char (point-max))
          (insert (format "[[ref:%s][%s]]\n\n\n" id subject))
          (insert (format "%s\n\n\n" question)))
-       (aset ui 3 :question)
-       ui)
+       (aset ui 3 :question))
 
       (`(:display :answer ,answer)
-       (unless (eq state :question) (error "state = %s" state))
+       (unless (eq state :question) (error "State = %s" state))
        (save-excursion
          (goto-char (point-max))
          (insert (format "%s\n\n\n" answer)))
-       (aset ui 3 :answer)
-       ui)
+       (aset ui 3 :answer))
 
       (:kill
        (when (buffer-live-p buffer) (kill-buffer buffer))
        (when (frame-live-p frame) (delete-frame frame))
-       (aset ui 3 :dead)
-       ui))))
+       (aset ui 3 :dead)))
+
+    reply))
 
 ;; DB
 
@@ -498,7 +498,7 @@ or (:scheduled DB). Returns the corresponding value (e.g., string or timestamp).
 ;; Node
 
 (defun total-recall--node-depth-first (node func)
-  "Return the list of results from calling FUNC on NODE and its children, depth-first."
+  "Return the list of results from calling FUNC on NODE."
   (let ((head
          (mapcan
           (lambda (node) (total-recall--node-depth-first node func))
@@ -686,12 +686,12 @@ which may be pruned by the scheduling algorithm to:
 depending on accumulated data so far.
 
 A reference to the exercise in its original content is displayed
-as its "subject" using the format:
+as its subject using the format:
 
 [[ref:<ExerciseID>][A/B/C]]
 
 When interpreted with the `locs-and-refs' package, it lets you display
-the exercise in context in an other frame."
+the exercise in context in another frame."
   (interactive)
 
   (unless (executable-find total-recall-ripgrep-cmd)
