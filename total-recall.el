@@ -4,7 +4,7 @@
 ;; Author: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Maintainer: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Homepage: https://github.com/phf-1/total-recall
-;; Package-Version: 0.7
+;; Package-Version: 0.8
 ;; Package-Requires: ((emacs "30.1"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;;
@@ -101,6 +101,7 @@
 (require 'parse-time)
 (require 'org-element)
 (require 'org-element-ast)
+(require 'cl-lib)
 
 ;; Configuration
 
@@ -140,7 +141,7 @@ This package provides `total-recall' for spaced repetition in Emacs."
   :type 'integer
   :group 'total-recall)
 
-;; Utils
+;; Time
 
 (defun total-recall--time-to-iso8601 (time)
   "Convert TIME to an ISO 8601 formatted string.
@@ -180,70 +181,69 @@ Returns a list of file paths."
 
 ;; Measure
 
+(cl-defstruct total-recall--measure
+  "Measure data structure."
+  id time)
+
 (defun total-recall--measure-mk (id time)
   "Build a measure that records ID and TIME.
 ID is a string identifier.
 TIME is a Lisp timestamp."
-  (record 'total-recall-measure id time))
+  (make-total-recall--measure :id id :time time))
 
-(defun total-recall--measure-p (measure)
-  "Return t if MEASURE is a valid measure structure, else nil."
-  (memq (type-of measure)
-        '(total-recall-measure
-          total-recall-measure-success
-          total-recall-measure-failure
-          total-recall-measure-skip)))
+;; total-recall--measure-p
 
-(defun total-recall--measure-id (measure)
-  "Return the ID of MEASURE."
-  (total-recall--measure-rcv measure :id))
+;; total-recall--measure-id
 
-(defun total-recall--measure-time (measure)
-  "Return the time of MEASURE."
-  (total-recall--measure-rcv measure :time))
+;; total-recall--measure-time
 
-(defun total-recall--measure-rcv (measure msg)
-  "Implement the MEASURE interface selected by MSG."
-    (pcase msg
-      (:id (aref measure 1))
-      (:time (aref measure 2))))
+;; Success :≡ Kind of Measure
+
+(cl-defstruct (total-recall--success-measure (:include total-recall--measure))
+  "Success measure data structure.")
 
 (defun total-recall--success-measure-mk (id time)
   "Build a success measure that records ID and TIME."
-  (record 'total-recall-measure-success id time))
+    (make-total-recall--success-measure :id id :time time))
 
-(defun total-recall--success-measure-p (measure)
-  "Return t if MEASURE is a success measure, else nil."
-  (eq (type-of measure) 'total-recall-measure-success))
+;; total-recall--success-measure-p
+
+;; Failure :≡ Kind of Measure
+
+(cl-defstruct (total-recall--failure-measure (:include total-recall--measure))
+  "Failure measure data structure.")
 
 (defun total-recall--failure-measure-mk (id time)
   "Build a failure measure that records ID and TIME."
-  (record 'total-recall-measure-failure id time))
+    (make-total-recall--failure-measure :id id :time time))
 
-(defun total-recall--failure-measure-p (measure)
-  "Return t if MEASURE is a failure measure, else nil."
-  (eq (type-of measure) 'total-recall-measure-failure))
+;; total-recall--failure-measure-p
+
+;; Skip :≡ Kind of Measure
+
+(cl-defstruct (total-recall--skip-measure (:include total-recall--measure))
+  "Skip measure data structure.")
 
 (defun total-recall--skip-measure-mk (id time)
   "Build a skip measure that records ID and TIME."
-  (record 'total-recall-measure-skip id time))
+    (make-total-recall--skip-measure :id id :time time))
 
-(defun total-recall--skip-measure-p (measure)
-  "Return t if MEASURE is a skip measure, else nil."
-  (eq (type-of measure) 'total-recall-measure-skip))
+;; total-recall--skip-measure-p
 
 ;; UI
+
+(cl-defstruct total-recall--ui
+  "UI data structure."
+  buffer frame state)
 
 (defun total-recall--ui-mk ()
   "Build the Total Recall UI."
   (let ((frame (make-frame `((width . ,total-recall-window-width)
                              (height . ,total-recall-window-height))))
         (buffer (get-buffer-create "*total-recall*")))
-    (record 'total-recall-ui buffer frame :state)))
+    (make-total-recall--ui :buffer buffer :frame frame :state :state)))
 
-(defun total-recall--ui-p (ui)
-  "Return t if UI is a valid UI structure, else nil."
-  (eq (type-of ui) 'total-recall-ui))
+;; total-recall--ui-p
 
 (defun total-recall--ui-init (ui)
   "Initialize UI."
@@ -271,9 +271,9 @@ ANSWER is a string."
 (defun total-recall--ui-rcv (ui msg)
   "Implement the UI API selected by MSG."
   (unless (total-recall--ui-p ui) (error "Not a UI structure"))
-  (let ((buffer (aref ui 1))
-        (frame (aref ui 2))
-        (state (aref ui 3))
+  (let ((buffer (total-recall--ui-buffer ui))
+        (frame (total-recall--ui-frame ui))
+        (state (total-recall--ui-state ui))
         (reply nil))
     (select-frame-set-input-focus frame)
     (switch-to-buffer buffer)
@@ -284,7 +284,7 @@ ANSWER is a string."
        (unless (derived-mode-p 'org-mode) (org-mode))
        (insert "* Total Recall *\n\n\n")
        (goto-char (point-min))
-       (aset ui 3 :init))
+       (setf (total-recall--ui-state ui) :init))
 
       (:no-exercises
        (unless (eq state :init) (error "State = %s" state))
@@ -295,7 +295,7 @@ ANSWER is a string."
 
       (`(:display :question ,id ,subject ,question)
        (when (memq state '(:question :answer))
-         (aset ui 3 :state)
+         (setf (total-recall--ui-state ui) :state)
          (total-recall--ui-rcv ui :init)
          (setq state (aref ui 3)))
 
@@ -304,19 +304,19 @@ ANSWER is a string."
          (goto-char (point-max))
          (insert (format "[[ref:%s][%s]]\n\n\n" id subject))
          (insert (format "%s\n\n\n" question)))
-       (aset ui 3 :question))
+       (setf (total-recall--ui-state ui) :question))
 
       (`(:display :answer ,answer)
        (unless (eq state :question) (error "State = %s" state))
        (save-excursion
          (goto-char (point-max))
          (insert (format "%s\n\n\n" answer)))
-       (aset ui 3 :answer))
+       (setf (total-recall--ui-state ui) :answer))
 
       (:kill
        (when (buffer-live-p buffer) (kill-buffer buffer))
        (when (frame-live-p frame) (delete-frame frame))
-       (aset ui 3 :dead)))
+       (setf (total-recall--ui-state ui) :dead)))
 
     reply))
 
@@ -407,6 +407,10 @@ Returns the result of the operation."
 
 ;; Exercise
 
+(cl-defstruct total-recall--exercise
+  "Exercise data structure."
+  subject id question answer)
+
 (defun total-recall--exercise-mk (subject id question answer)
   "Create an exercise with SUBJECT, ID, QUESTION, and ANSWER.
 SUBJECT, ID, QUESTION, and ANSWER are strings. Signals an error if any argument
@@ -415,31 +419,20 @@ is not a string. Returns an exercise structure."
   (unless (stringp id) (error "ID is not a string"))
   (unless (stringp question) (error "Question is not a string"))
   (unless (stringp answer) (error "Answer is not a string"))
-  (record 'total-recall-exercise subject id question answer))
+  (make-total-recall--exercise :subject subject
+                               :id id
+                               :question question
+                               :answer answer))
 
-(defun total-recall--exercise-p (ex)
-  "Return t if EX is an exercise structure, else nil."
-  (eq (type-of ex) 'total-recall-exercise))
+;; total-recall--exercise-p
 
-(defun total-recall--exercise-subject (exercise)
-  "Return the subject of EXERCISE.
-EXERCISE is an exercise structure. Returns a string."
-  (total-recall--exercise-rcv exercise :subject))
+;; total-recall--exercise-subject
 
-(defun total-recall--exercise-id (exercise)
-  "Return the ID of EXERCISE.
-EXERCISE is an exercise structure. Returns a string."
-  (total-recall--exercise-rcv exercise :id))
+;; total-recall--exercise-id
 
-(defun total-recall--exercise-question (exercise)
-  "Return the question of EXERCISE.
-EXERCISE is an exercise structure. Returns a string."
-  (total-recall--exercise-rcv exercise :question))
+;; total-recall--exercise-question
 
-(defun total-recall--exercise-answer (exercise)
-  "Return the answer of EXERCISE.
-EXERCISE is an exercise structure. Returns a string."
-  (total-recall--exercise-rcv exercise :answer))
+;; total-recall--exercise-answer
 
 (defun total-recall--exercise-scheduled (exercise db)
   "Return the scheduled review time for EXERCISE using database DB.
@@ -451,10 +444,10 @@ Returns a Lisp timestamp."
   "Handle MSG for EXERCISE.
 EXERCISE is an exercise structure. MSG can be :subject, :id, :question, :answer,
 or (:scheduled DB). Returns the corresponding value (e.g., string or timestamp)."
-  (let ((subject (aref exercise 1))
-        (id (aref exercise 2))
-        (question (aref exercise 3))
-        (answer (aref exercise 4)))
+  (let ((subject (total-recall--exercise-subject exercise))
+        (id (total-recall--exercise-id exercise))
+        (question (total-recall--exercise-question exercise))
+        (answer (total-recall--exercise-answer exercise)))
 
     (pcase msg
       (:subject subject)
