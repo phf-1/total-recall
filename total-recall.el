@@ -297,7 +297,7 @@ ANSWER is a string."
        (when (memq state '(:question :answer))
          (setf (total-recall--ui-state ui) :state)
          (total-recall--ui-rcv ui :init)
-         (setq state (aref ui 3)))
+         (setq state (total-recall--ui-state ui)))
 
        (unless (eq state :init) (error "State = %s" state))
        (save-excursion
