@@ -191,12 +191,6 @@ ID is a string identifier.
 TIME is a Lisp timestamp."
   (make-total-recall--measure :id id :time time))
 
-;; total-recall--measure-p
-
-;; total-recall--measure-id
-
-;; total-recall--measure-time
-
 ;; Success :≡ Kind of Measure
 
 (cl-defstruct (total-recall--success-measure (:include total-recall--measure))
@@ -205,8 +199,6 @@ TIME is a Lisp timestamp."
 (defun total-recall--success-measure-mk (id time)
   "Build a success measure that records ID and TIME."
     (make-total-recall--success-measure :id id :time time))
-
-;; total-recall--success-measure-p
 
 ;; Failure :≡ Kind of Measure
 
@@ -217,8 +209,6 @@ TIME is a Lisp timestamp."
   "Build a failure measure that records ID and TIME."
     (make-total-recall--failure-measure :id id :time time))
 
-;; total-recall--failure-measure-p
-
 ;; Skip :≡ Kind of Measure
 
 (cl-defstruct (total-recall--skip-measure (:include total-recall--measure))
@@ -227,8 +217,6 @@ TIME is a Lisp timestamp."
 (defun total-recall--skip-measure-mk (id time)
   "Build a skip measure that records ID and TIME."
     (make-total-recall--skip-measure :id id :time time))
-
-;; total-recall--skip-measure-p
 
 ;; UI
 
@@ -242,8 +230,6 @@ TIME is a Lisp timestamp."
                              (height . ,total-recall-window-height))))
         (buffer (get-buffer-create "*total-recall*")))
     (make-total-recall--ui :buffer buffer :frame frame :state :state)))
-
-;; total-recall--ui-p
 
 (defun total-recall--ui-init (ui)
   "Initialize UI."
@@ -423,16 +409,6 @@ is not a string. Returns an exercise structure."
                                :id id
                                :question question
                                :answer answer))
-
-;; total-recall--exercise-p
-
-;; total-recall--exercise-subject
-
-;; total-recall--exercise-id
-
-;; total-recall--exercise-question
-
-;; total-recall--exercise-answer
 
 (defun total-recall--exercise-scheduled (exercise db)
   "Return the scheduled review time for EXERCISE using database DB.
