@@ -4,8 +4,8 @@
 ;; Author: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Maintainer: Pierre-Henry FRÖHRING <contact@phfrohring.com>
 ;; Homepage: https://github.com/phf-1/total-recall
-;; Package-Version: 0.9
-;; Package-Requires: ((emacs "30.1"))
+;; Package-Version: 0.10
+;; Package-Requires: ((emacs "29.4"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;;
 ;; This program is free software; you can redistribute it and/or modify
@@ -17,80 +17,110 @@
 ;;
 ;;; Commentary:
 ;;
-;; This package provides `total-recall'.
+;; `total-recall.el` is a spaced repetition system for Emacs that helps users review and
+;; retain knowledge stored in Org Mode files. It searches for definitions and exercises
+;; in Org files under a configurable root directory, schedules reviews based on past
+;; performance, presents exercises via a user interface, and persists results in a
+;; SQLite database.
 ;; 
-;; The command `M-x total-recall' uses Ripgrep to search for Org files in
-;; the directory set by `total-recall-root-dir' that contain
-;; exercises. It lists the exercises from each file and provides a user
-;; interface to view them. The list of exercises follows a depth first
-;; order /i.e./ a bottom-up review order.
+;; * Goals
 ;; 
-;; Each exercise displays its question first, followed by the answer. The
-;; user's performance—whether they answered correctly—is recorded in an
-;; SQLite database at `total-recall-database'. This data determines when
-;; an exercise should be reviewed next.
+;; - Enable users to create and review learning content (definitions and exercises) in
+;;   Org Mode files.
+;; - Implement spaced repetition to optimize retention by scheduling reviews at
+;;   increasing intervals based on success.
+;; - Provide a modular, extensible architecture using an actor model for managing system
+;;   components.
+;; - Offer a customizable UI and configuration options for integration into diverse
+;;   Emacs workflows.
 ;; 
-;; An exercise is any Org file heading that meets these criteria:
-;; - Has a `TYPE' property set to `total-recall-type-id'.
-;; - Has an `ID' property with a UUID value.
-;; - Contains two subheadings:
-;;   - The first subheading is the question.
-;;   - The second subheading is the answer.
-;; - Is located in `total-recall-root-dir'.
+;; * User Workflows
 ;; 
-;; Example of an exercise:
+;; 1. *Setup*:
+;;    - Users configure ~total-recall-root-dir~ for the search directory,
+;;      ~total-recall-database~ for the SQLite database path, and keybindings (e.g.,
+;;      ~total-recall-key-skip~).
+;;    - Org files are created with headings marked by ~:TYPE:~ (matching
+;;      ~total-recall-def-type~ or ~total-recall-ex-type~) and ~:ID:~ (UUIDs).
+;;    - Exercises have subheadings for questions and answers; definitions have content.
 ;; 
-;; #+begin_src org
-;; * Emacs
-;; :PROPERTIES:⁣
+;; 2. *Running Total Recall*:
+;;    - Invoke ~M-x total-recall~ to start the system.
+;;    - The system searches for Org files, parses exercises, and selects those due for
+;;      review based on prior ratings.
+;;    - Exercises are shown in a dedicated frame (~UI~), where users press keys to reveal
+;;      answers, mark success/failure/skip, or quit.
+;;    - Results are saved to the database, and a report is displayed in a buffer
+;;      (~total-recall-io-buffer-name~).
+;; 
+;; 3. *Review Process*:
+;;    - For each exercise, users view the question, choose to reveal the answer, and
+;;      rate their performance.
+;;    - The ~Planner~ schedules future reviews: successful reviews double the interval
+;;      (e.g., 1, 2, 4 days), while failures reset the schedule.
+;;    - Definitions are treated as exercises with a fixed question ("* Definition?") and
+;;      content as the answer.
+;; 
+;; * Example Org File Structure
+;; 
+;; #+begin_example
+;; ,* Topic
+;; :PROPERTIES:
+;; :TYPE: f590edb9-5fa3-4a07-8f3d-f513950d5663
+;; :ID:   123e4567-e89b-12d3-a456-426614174000
+;; :END:
+;; Definition content...
+;; 
+;; ,* Exercise
+;; :PROPERTIES:
 ;; :TYPE: b0d53cd4-ad89-4333-9ef1-4d9e0995a4d8
-;; :ID: ced2b42b-bfba-4af5-913c-9d903ac78433
+;; :ID:   789abcde-f012-3456-7890-abcdef123456
 ;; :END:
 ;; 
-;; ** What is GNU Emacs?
+;; ,** Question
+;; What is the capital of France?
 ;; 
-;; [optional content]
+;; ,** Answer
+;; The capital of France is Paris.
+;; #+end_example
 ;; 
-;; ** Answer
+;; * Components and Interactions
 ;; 
-;; An extensible, customizable, free/libre text editor—and more. Its core
-;; is an interpreter for Emacs Lisp, a Lisp dialect with extensions for
-;; text editing.
-;; #+end_src
+;; The system comprises several actors, each handling a specific responsibility:
+;; - *Searcher*: Uses Ripgrep to find Org files containing definitions or exercises,
+;;   identified by UUIDs in ~:ID:~ and ~:TYPE:~ properties.
+;; - *Parser*: Extracts definitions and exercises from Org files in depth-first order,
+;;   converting them into actors (~Definition~ and ~Exercise~).
+;; - *Planner*: Selects exercises due for review based on a spaced repetition algorithm,
+;;   using ratings stored in the database.
+;; - *DB*: Manages persistence of review results (ratings) in a SQLite database, storing
+;;   success, failure, or skip outcomes with timestamps.
+;; - *Clock*: Provides time-related functionality, including current time and review
+;;   scheduling logic.
+;; - *UI*: Displays exercises to the user, collects input (success, failure, skip, quit),
+;;   and shows reports.
+;; - *Report*: Aggregates execution logs for user feedback.
+;; - *IO*: Handles output to a buffer and minibuffer for reports and notifications.
+;; - *TotalRecall*: Orchestrates the workflow, coordinating other actors to search, parse,
+;;   schedule, display, and save results.
 ;; 
-;; Exercises can be embedded in any Org Mode document for context:
+;; The workflow begins with ~total-recall~, which initializes a ~TotalRecall~ actor. This
+;; actor:
+;; 1. Uses ~Searcher~ to locate relevant Org files.
+;; 2. Employs ~Parser~ to extract exercises and definitions.
+;; 3. Filters exercises with ~Planner~ based on review schedules stored in ~DB~.
+;; 4. Presents exercises via ~UI~, collecting user ratings.
+;; 5. Saves ratings to ~DB~ and generates a ~Report~ for output via ~IO~.
 ;; 
-;; #+begin_src org
-;; * Title
-;; ** Section
-;; *** Sub-section
-;; **** Exercise 1
-;; **** Exercise 2
-;; *** Exercise 3
-;; *** Exercise 4
-;; #+end_src
+;; * Extensibility
 ;; 
-;; which would lead to this review order:
+;; The actor model allows new components (e.g., alternative UIs or scheduling
+;; algorithms) to be added by defining new actors and messages. Users can customize
+;; keybindings, database paths, and UI dimensions via ~defcustom~ variables.
 ;; 
-;; 1) Title/Section/Sub-section/Exercise 1
-;; 2) Title/Section/Sub-section/Exercise 2
-;; 3) Title/Section/Exercise 3
-;; 4) Title/Section/Exercise 4
-;; 
-;; which may be pruned by the scheduling algorithm to:
-;; 
-;; 1) Title/Section/Sub-section/Exercise 1
-;; 2) Title/Section/Exercise 4
-;; 
-;; depending on accumulated data so far.
-;; 
-;; A reference to the exercise in its original content is displayed
-;; as its subject using the format:
-;; 
-;; [[ref:<ExerciseID>][A/B/C]]
-;; 
-;; When interpreted with the `locs-and-refs' package, it lets you display
-;; the exercise in context in another frame.
+;; This system integrates seamlessly with Emacs, leveraging Org Mode for content
+;; management and SQLite for persistence, providing a robust tool for knowledge
+;; retention.
 ;;
 ;;; Code:
 
@@ -98,11 +128,11 @@
 
 (unless (sqlite-available-p)
   (error "Emacs must be compiled with built-in support for SQLite databases"))
+(require 'cl-generic)
 (require 'org)
 (require 'time-date)
 (require 'parse-time)
 (require 'org-element)
-(require 'org-element-ast)
 (require 'cl-lib)
 
 ;; Configuration
@@ -113,388 +143,617 @@ This package provides `total-recall' for spaced repetition in Emacs."
   :group 'convenience
   :prefix "total-recall-")
 
-(defcustom total-recall-database (file-name-concat user-emacs-directory "total-recall.sqlite3")
-  "Path to the SQLite database for storing exercise data."
+(defcustom total-recall-root-dir (expand-file-name "~")
+  "Specifies the root directory for Total Recall file searches.
+This is a string representing the directory path where Org Mode files
+are searched."
+  :type 'string
+  :group 'total-recall)
+
+(defcustom total-recall-database (file-name-concat (expand-file-name user-emacs-directory) "total-recall-test.sqlite3")
+  "Specifies the path to the Total Recall SQLite database.
+This is a string representing the file path for storing review data."
   :type 'string
   :group 'total-recall)
 
 (defcustom total-recall-ripgrep-cmd "rg"
-  "Name or path of the Ripgrep executable."
+  "Specifies the name or path of the Ripgrep executable.
+This is a string used to locate the Ripgrep command for file searching."
   :type 'string
   :group 'total-recall)
 
-(defcustom total-recall-root-dir (expand-file-name "~")
-  "Root directory where Ripgrep searches for Org files."
+(defcustom total-recall-io-buffer-name "*TotalRecall*"
+  "Specifies the name of the Total Recall output buffer.
+This is a string used for the buffer where reports are written."
   :type 'string
   :group 'total-recall)
 
-(defcustom total-recall-type-id "b0d53cd4-ad89-4333-9ef1-4d9e0995a4d8"
-  "Type ID for Org headings representing exercises."
+(defcustom total-recall-def-type "f590edb9-5fa3-4a07-8f3d-f513950d5663"
+  "Specifies the UUID for identifying definition headings in Org files.
+This is a string used to mark headings as definitions in Total Recall."
+  :type 'string
+  :group 'total-recall)
+
+(defcustom total-recall-ex-type "b0d53cd4-ad89-4333-9ef1-4d9e0995a4d8"
+  "Specifies the UUID for identifying exercise headings in Org files.
+This is a string used to mark headings as exercises in Total Recall."
   :type 'string
   :group 'total-recall)
 
 (defcustom total-recall-window-width 160
-  "Width of the Total Recall UI in characters."
+  "Specifies the width of the Total Recall UI frame in characters.
+This is an integer defining the frame width for the UI."
   :type 'integer
   :group 'total-recall)
 
 (defcustom total-recall-window-height 90
-  "Height of the Total Recall UI in characters."
+  "Specifies the height of the Total Recall UI frame in characters.
+This is an integer defining the frame height for the UI."
   :type 'integer
   :group 'total-recall)
 
-(defcustom total-recall-key-reveal ?r
-  "Key to reveal the answer in Total Recall UI."
-  :type 'character
-  :group 'total-recall)
-
 (defcustom total-recall-key-skip ?k
-  "Key to skip an exercise in Total Recall UI."
+  "Specifies the key to skip an exercise in the Total Recall UI.
+This is a character used to skip the current exercise."
   :type 'character
   :group 'total-recall)
 
 (defcustom total-recall-key-quit ?q
-  "Key to quit the Total Recall session."
+  "Specifies the key to quit the Total Recall session.
+This is a character used to exit the UI session."
   :type 'character
   :group 'total-recall)
 
 (defcustom total-recall-key-success ?s
-  "Key to mark an exercise as successful in Total Recall UI."
+  "Specifies the key to mark an exercise as successful in the Total Recall UI.
+This is a character used to record a successful review."
   :type 'character
   :group 'total-recall)
 
 (defcustom total-recall-key-failure ?f
-  "Key to mark an exercise as failed in Total Recall UI."
+  "Specifies the key to mark an exercise as failed in the Total Recall UI.
+This is a character used to record a failed review."
   :type 'character
   :group 'total-recall)
 
-;; Time
+(defcustom total-recall-key-reveal ?r
+  "Specifies the key to reveal the answer in the Total Recall UI.
+This is a character used to show the exercise answer."
+  :type 'character
+  :group 'total-recall)
 
-(defun total-recall--time-to-iso8601 (time)
-  "Convert TIME to an ISO 8601 formatted string.
-TIME is a Lisp timestamp. Returns a string in the format YYYY-MM-DDTHH:MM:SSZ."
-  (format-time-string "%FT%TZ" (time-convert time 'list) t))
+;; Utils
 
-(defun total-recall--iso8601-to-time (iso8601)
-  "Convert ISO8601 string to a Lisp timestamp.
-ISO8601 is a string in ISO 8601 format. Returns a Lisp timestamp."
-  (parse-iso8601-time-string iso8601))
+(defun total-recall--truncate-str (str)
+  "Truncates STR to 25 characters, replacing newlines with spaces.
+Returns the truncated string with an ellipsis if necessary."
+  (truncate-string-to-width
+   (replace-regexp-in-string "\n" " " (string-trim str))
+   25
+   0
+   nil
+   "…"))
 
-(defun total-recall--time-init ()
-  "Return a Lisp timestamp for January 1, 1970, 00:00:00 UTC."
-  (encode-time 0 0 0 1 1 1970 0))
+(defun total-recall--not-implemented-error ()
+  "Signals an error indicating the function is not implemented.
+Throws an error with the message \"NotImplemented\"."
+  (error "NotImplemented"))
 
-;; Search
+(defun total-recall--not-implemented-warning ()
+  "Displays a warning indicating the function is not implemented.
+Shows a message \"WARNING: NotImplemented\" in the echo area."
+  (message "WARNING: NotImplemented"))
 
-(defun total-recall--search (dir ext type-id)
-  "Search for files containing TYPE-ID with extension EXT in directory DIR.
-DIR is a string path to the directory.
-EXT is a string file extension (e.g., \"org\").
-TYPE-ID is a string identifier to search for.
-Returns a list of file paths."
-  (let ((cmd (format "%s -g '*.%s' -i --no-heading -n --color=never '%s' %s"
-                     total-recall-ripgrep-cmd ext type-id dir))
-        matches)
-    (with-temp-buffer
-      (call-process-shell-command cmd nil `(,(current-buffer) nil) nil)
-      (goto-char (point-min))
-      (while (not (eobp))
-        (let* ((line (buffer-substring-no-properties
-                      (line-beginning-position) (line-end-position)))
-               (match (split-string line ":")))
-          (push (car match) matches))
-        (forward-line 1))
-      (delete-dups matches))))
+(defun total-recall--string-uuid-p (str)
+  "Check if STR is a valid UUID string.
+Returns t if STR matches the UUID format, nil otherwise."
+  (and (stringp str)
+       (string-match-p
+        "^[0-9a-fA-F]\\{8\\}-[0-9a-fA-F]\\{4\\}-[0-9a-fA-F]\\{4\\}-[0-9a-fA-F]\\{4\\}-[0-9a-fA-F]\\{12\\}$"
+        str)))
 
-;; Measure
+(defun total-recall--timestamp-leq (t1 t2)
+  "Check if timestamp T1 is less than or equal to T2.
+Returns t if T1 is less than or equal to T2, nil otherwise."
+  (or (time-less-p t1 t2)
+      (equal t1 t2)))
 
-(cl-defstruct total-recall--measure
-  "Measure data structure."
-  id time)
+(defconst total-recall--day (* 24 60 60)
+  "Number of seconds in a day.")
 
-(defun total-recall--measure-mk (id time)
-  "Build a measure that records ID and TIME.
-ID is a string identifier.
-TIME is a Lisp timestamp."
-  (make-total-recall--measure :id id :time time))
+(defun total-recall--find-last-index (lst pred)
+  "Find the last index in LST where PRED return non-nil.
+LST is a list, and PRED is a function taking a list element.
+Returns the index of the last matching element or nil if none."
+  (let ((index -1)
+        (last-index nil))
+    (dolist (item lst)
+      (setq index (1+ index))
+      (when (funcall pred item)
+        (setq last-index index)))
+    last-index))
 
-;; Success :≡ Kind of Measure
+(defun total-recall--org-element-lineage-map (fun datum &optional types with-self first-match)
+  "Apply FUN to each ancestor of DATUM, from closest to farthest.
+DATUM is an Org element or object.
+TYPES, if non-nil, is a list of symbols to restrict ancestors.
+WITH-SELF, if non-nil, includes DATUM if it matches TYPES.
+FIRST-MATCH, if non-nil, stops at the first non-nil result from FUN.
+Returns a list of non-nil results in reverse order or the first match."
+  (let ((lineage (if with-self
+                     (cons datum (org-element-lineage datum))
+                   (org-element-lineage datum)))
+        results)
+    (catch 'first-match
+      (dolist (element lineage)
+        (when (or (not types)
+                  (memq (org-element-type element) types))
+          (let ((result (funcall fun element)))
+            (when result
+              (if first-match
+                  (throw 'first-match result)
+                (push result results)))))))
+    (if first-match
+        nil  ; If we reach here with first-match, no match was found
+      (nreverse results))))
 
-(cl-defstruct (total-recall--success-measure (:include total-recall--measure))
-  "Success measure data structure.")
+;; Actor
 
-(defun total-recall--success-measure-mk (id time)
-  "Build a success measure that records ID and TIME."
-    (make-total-recall--success-measure :id id :time time))
+(defmacro total-recall--Actor (init name)
+  "Define an actor named NAME with initialization function INIT.
+INIT is a function that takes DATA and returns a memory hash table.
+NAME is a symbol naming the actor function, which processes messages."
+  `(defun ,name (data)
+     (let* ((memory (funcall ,init data))
+            (self (lambda (msg)
+                    (let* ((rcv (gethash 'rcv memory))
+                           (stack (puthash 'stack (funcall rcv msg) memory)))
+                      (while (not (null stack))
+                        (puthash 'stack (cdr stack) memory)
+                        (funcall (gethash 'tx memory) memory (car stack))
+                        (setq stack (gethash 'stack memory)))
+                      (gethash 'out memory)))))
+       (puthash 'self self memory)
+       self)))
 
-;; Failure :≡ Kind of Measure
+(defun total-recall--send (actor msg)
+  "Send MSG to ACTOR and return the result.
+ACTOR is a function created by `total-recall--Actor'.
+MSG is the message to process."
+  (funcall actor msg))
 
-(cl-defstruct (total-recall--failure-measure (:include total-recall--measure))
-  "Failure measure data structure.")
+(defun total-recall--Actor-memory (rcv tx)
+  "Create a memory hash table for an actor with RCV and TX functions.
+RCV is a function that processes incoming messages.
+TX is a function that handles transactions.
+Returns the initialized memory hash table."
+  (let ((memory (make-hash-table :test 'eq)))
+    (puthash 'rcv rcv memory)
+    (puthash 'tx tx memory)
+    (puthash 'stack '() memory)
+    (puthash 'self t memory)
+    (puthash 'out nil memory)
+    memory))
 
-(defun total-recall--failure-measure-mk (id time)
-  "Build a failure measure that records ID and TIME."
-    (make-total-recall--failure-measure :id id :time time))
+(defmacro total-recall--message (name)
+  "Define a message function for NAME to send to an actor.
+NAME is a symbol used to create a function `total-recall--NAME'.
+The function sends a message to an actor with optional arguments."
+  `(defun ,(intern (concat "total-recall--" (symbol-name name))) (actor &rest args)
+     (total-recall--send actor
+                         (pcase args
+                           ('() ',name)
+                           (_ (cons ',name args))))))
 
-;; Skip :≡ Kind of Measure
+(total-recall--message add)
+(total-recall--message answer)
+(total-recall--message buffer)
+(total-recall--message buffer-name)
+(total-recall--message date)
+(total-recall--message file)
+(total-recall--message files)
+(total-recall--message id)
+(total-recall--message minibuffer)
+(total-recall--message now)
+(total-recall--message parse)
+(total-recall--message path)
+(total-recall--message question)
+(total-recall--message ratings)
+(total-recall--message read)
+(total-recall--message save)
+(total-recall--message select)
+(total-recall--message show-exercise)
+(total-recall--message show-report)
+(total-recall--message start)
+(total-recall--message stop)
+(total-recall--message string)
+(total-recall--message struct)
+(total-recall--message tick)
+(total-recall--message tick2)
+(total-recall--message value)
 
-(cl-defstruct (total-recall--skip-measure (:include total-recall--measure))
-  "Skip measure data structure.")
+;; Clock
 
-(defun total-recall--skip-measure-mk (id time)
-  "Build a skip measure that records ID and TIME."
-    (make-total-recall--skip-measure :id id :time time))
+(total-recall--Actor
+ #'total-recall--Clock-init
+ total-recall--Clock)
 
-;; UI
+(defun total-recall--Clock-init (time)
+  "Initialize a clock actor with TIME.
+TIME is a natural number representing the initial clock time.
+Returns a memory hash table for the clock actor."
+  (let ((memory (total-recall--Actor-memory
+                 #'total-recall--Clock-rcv
+                 #'total-recall--Clock-tx)))
+    (puthash 'time time memory)
+    memory))
 
-(cl-defstruct total-recall--ui
-  "UI data structure."
-  buffer frame state)
-
-(defun total-recall--ui-mk ()
-  "Build the Total Recall UI."
-  (let ((frame (make-frame `((width . ,total-recall-window-width)
-                             (height . ,total-recall-window-height))))
-        (buffer (get-buffer-create "*total-recall*")))
-    (make-total-recall--ui :buffer buffer :frame frame :state :state)))
-
-(defun total-recall--ui-init (ui)
-  "Initialize UI."
-  (total-recall--ui-rcv ui :init))
-
-(defun total-recall--ui-no-exercises (ui)
-  "Display a /no exercises/ message in UI."
-  (total-recall--ui-rcv ui :no-exercises))
-
-(defun total-recall--ui-display-question (ui id subject question)
-  "Display QUESTION identified by ID about SUBJECT in UI.
-QUESTION is a string.
-SUBJECT is a string."
-  (total-recall--ui-rcv ui `(:display :question ,id ,subject ,question)))
-
-(defun total-recall--ui-display-answer (ui answer)
-  "Display ANSWER in UI.
-ANSWER is a string."
-  (total-recall--ui-rcv ui `(:display :answer ,answer)))
-
-(defun total-recall--ui-kill (ui)
-  "Close UI."
-  (total-recall--ui-rcv ui :kill))
-
-(defun total-recall--ui-rcv (ui msg)
-  "Implement the UI API selected by MSG."
-  (unless (total-recall--ui-p ui) (error "Not a UI structure"))
-  (let ((buffer (total-recall--ui-buffer ui))
-        (frame (total-recall--ui-frame ui))
-        (state (total-recall--ui-state ui))
-        (reply nil))
-    (select-frame-set-input-focus frame)
-    (switch-to-buffer buffer)
-    (pcase msg
-      (:init
-       (unless (eq state :state) (error "State = %s" state))
-       (erase-buffer)
-       (unless (derived-mode-p 'org-mode) (org-mode))
-       (insert "* Total Recall *\n\n\n")
-       (goto-char (point-min))
-       (setf (total-recall--ui-state ui) :init))
-
-      (:no-exercises
-       (unless (eq state :init) (error "State = %s" state))
-       (save-excursion
-         (goto-char (point-max))
-         (insert "No exercises found.\n"))
-       (run-with-timer 2 nil (lambda () (total-recall--ui-rcv ui :kill))))
-
-      (`(:display :question ,id ,subject ,question)
-       (when (memq state '(:question :answer))
-         (setf (total-recall--ui-state ui) :state)
-         (total-recall--ui-rcv ui :init)
-         (setq state (total-recall--ui-state ui)))
-
-       (unless (eq state :init) (error "State = %s" state))
-       (save-excursion
-         (goto-char (point-max))
-         (insert (format "[[ref:%s][%s]]\n\n\n" id subject))
-         (insert (format "%s\n\n\n" question)))
-       (setf (total-recall--ui-state ui) :question))
-
-      (`(:display :answer ,answer)
-       (unless (eq state :question) (error "State = %s" state))
-       (save-excursion
-         (goto-char (point-max))
-         (insert (format "%s\n\n\n" answer)))
-       (setf (total-recall--ui-state ui) :answer))
-
-      (:kill
-       (when (buffer-live-p buffer) (kill-buffer buffer))
-       (when (frame-live-p frame) (delete-frame frame))
-       (setf (total-recall--ui-state ui) :dead)))
-
-    reply))
-
-;; DB
-
-(defun total-recall--db-mk (path)
-  "Open an SQLite database at PATH.
-PATH is a string file path. Returns an SQLite database handle."
-  (sqlite-open path))
-
-(defun total-recall--db-p (x)
-  "Return t if X is an SQLite database handle, else nil."
-  (sqlitep x))
-
-(defun total-recall--db-save (db measure)
-  "Save MEASURE to database DB.
-DB is an SQLite database handle. MEASURE is a measure structure. Returns t."
-  (total-recall--db-rcv db `(:save ,measure)))
-
-(defun total-recall--db-select (db id)
-  "Retrieve measures for exercise ID from database DB.
-DB is an SQLite database handle. ID is a string exercise identifier.
-Returns a list of measure structures."
-  (total-recall--db-rcv db `(:select :measures ,id)))
-
-(defun total-recall--db-close (db)
-  "Close database DB.
-DB is an SQLite database handle. Returns t."
-  (total-recall--db-rcv db :close))
-
-(defun total-recall--db-rcv (db msg)
-  "Handle MSG for SQLite database DB.
-DB is an SQLite database handle.
-Returns the result of the operation."
-  (unless (sqlite-select db "SELECT name FROM sqlite_master WHERE type='table' AND name='exercise_log'")
-    (sqlite-execute db
-                    "CREATE TABLE exercise_log (
-                       type TEXT NOT NULL,
-                       id TEXT NOT NULL,
-                       time TEXT NOT NULL)"))
-
+(defun total-recall--Clock-rcv (msg)
+  "Process incoming MSG for the clock actor.
+MSG is a symbol or list representing a clock command.
+Returns a list of instructions to be executed."
   (pcase msg
-    (`(:measure-to-row ,measure)
-     (pcase measure
-       ((pred total-recall--measure-p)
-        (let ((type
-               (cond
-                ((total-recall--success-measure-p measure) "success")
-                ((total-recall--failure-measure-p measure) "failure")))
-              (id (total-recall--measure-id measure))
-              (time (total-recall--time-to-iso8601 (total-recall--measure-time measure))))
-          (list type id time)))
-       (_ (error "MEASURE is not a Measure. %S" measure))))
+    ('read '(read))
+    ('tick '(tick))
+    ('tick2 '(tick tick))
+    ('now '(now))
+    (_ (error "Unexpected message: msg = %s" msg))))
 
-    (`(:row-to-measure ,row)
-     (pcase row
-       (`(,type ,id ,time)
-        (pcase type
-          ("success" (total-recall--success-measure-mk id (total-recall--iso8601-to-time time)))
-          ("failure" (total-recall--failure-measure-mk id (total-recall--iso8601-to-time time)))))))
+(defun total-recall--Clock-tx (memory inst)
+  "Handle transaction INST for the clock actor using MEMORY.
+MEMORY is the actor’s memory hash table.
+INST is a symbol representing a clock instruction.
+Updates MEMORY based on INST."
+  (let ((time (gethash 'time memory)))
 
-    (`(:save ,measure)
-     (pcase measure
-       ((pred total-recall--measure-p)
-        (sqlite-execute
-         db
-         "INSERT INTO exercise_log (type, id, time) VALUES (?, ?, ?)"
-         (total-recall--db-rcv db `(:measure-to-row ,measure)))
-        t)
-       (_ (error "Unexpected value: %S" measure))))
+    (pcase inst
+      ('read
+       (puthash 'out time memory))
 
-    (`(:select :measures ,id)
-     (let (rows)
-       (setq rows
-             (sqlite-select
-              db
-              "SELECT type, id, time FROM exercise_log WHERE id = ? ORDER BY time ASC"
-              (list id)))
-       (mapcar
-        (lambda (row) (total-recall--db-rcv db `(:row-to-measure ,row)))
-        rows)))
+      ('now
+       (puthash 'out (time-convert (current-time) 'list) memory))
 
-    (:close
-     (sqlite-close db)
-     t)
+      ('tick
+       (puthash 'time (+ time 1) memory)
+       (puthash 'out (gethash 'self memory) memory))
 
-    (_ (error "Unknown message: %S" msg))))
+      (_ (error "Unexpected instruction: inst = %s" inst)))))
+
+;; Report
+
+(total-recall--Actor
+ #'total-recall--Report-init
+ total-recall--Report)
+
+(defun total-recall--Report-init (_data)
+  "Initialize a report actor with DATA.
+DATA is ignored in this implementation.
+Returns a memory hash table for the report actor."
+  (let ((memory (total-recall--Actor-memory
+                 #'total-recall--Report-rcv
+                 #'total-recall--Report-tx)))
+    (puthash 'lines '() memory)
+    memory))
+
+(defun total-recall--Report-rcv (msg)
+  "Process incoming MSG for the report actor.
+MSG is a list or symbol, such as `(add LINE)` or `string`.
+Returns a list containing the instruction to execute."
+  (pcase msg
+    (`(add ,_line)
+     `(,msg))
+
+    ('string
+     `(,msg))
+
+    (_ (error "Unexpected message: msg = %s" msg))))
+
+(defun total-recall--Report-tx (memory inst)
+  "Handle transaction INST for the report actor using MEMORY.
+MEMORY is the actor’s memory hash table.
+INST is a list or symbol, such as `(add LINE)` or `string`.
+Updates MEMORY based on INST."
+  (let ((self (gethash 'self memory))
+        (lines (gethash 'lines memory)))
+    (pcase inst
+      (`(add ,line)
+       (puthash 'lines (cons line lines) memory)
+       (puthash 'out self memory))
+
+      ('string
+       (puthash 'out (string-join (reverse lines) "\n") memory))
+
+      (_ (error "Unexpected instruction: inst = %s" inst)))))
+
+;; Searcher
+
+(total-recall--Actor
+ #'total-recall--Searcher-init
+ total-recall--Searcher)
+
+(defun total-recall--Searcher-init (data)
+  "Initialize a searcher actor with DATA.
+DATA is a list of (ROOT DEF-ID EX-ID), where ROOT is a directory path,
+DEF-ID and EX-ID are strings identifying definitions and exercises.
+Returns a memory hash table for the searcher actor."
+  (let ((memory (total-recall--Actor-memory
+                 #'total-recall--Searcher-rcv
+                 #'total-recall--Searcher-tx)))
+    (pcase data
+      (`(,root ,def-id ,ex-id)
+
+       (unless (file-directory-p (puthash 'root root memory))
+         (error "Root is not a directory: root = %s" root))
+
+       (let ((ripgrep total-recall-ripgrep-cmd))
+         (unless (stringp (puthash 'ripgrep (executable-find ripgrep) memory))
+           (error "Ripgrep not found in PATH: ripgrep = %s" ripgrep)))
+
+       (unless (stringp (puthash 'def-id def-id memory))
+         (error "Def-id is not a string: def-id = %s" def-id))
+
+       (unless (stringp (puthash 'ex-id ex-id memory))
+         (error "Ex-id is not a string: ex-id = %s" ex-id))
+
+       (puthash
+        'cmd
+        (format "%s -g '*.org' -i --no-heading -n --color=never -m 1 '%s' %s"
+                (gethash 'ripgrep memory)
+                (format "%s|%s" (gethash 'def-id memory) (gethash 'ex-id memory))
+                (gethash 'root memory))
+        memory)
+
+       memory)
+      (_ (error "Unexpected data: data = %s" data)))))
+
+(defun total-recall--Searcher-rcv (msg)
+  "Process incoming MSG for the searcher actor.
+MSG is the symbol `files` to request file paths.
+Returns a list containing the `files` instruction."
+  (pcase msg
+    ('files
+     '(files))
+    (_ (error "Unexpected message: msg = %s" msg))))
+
+(defun total-recall--Searcher-tx (memory inst)
+  "Handle transaction INST for the searcher actor using MEMORY.
+MEMORY is the actor’s memory hash table.
+INST is the symbol `files` to search for files.
+Updates MEMORY with the list of found file paths."
+  (let ((cmd (gethash 'cmd memory)))
+    (pcase inst
+      ('files
+       (let (matches)
+         (with-temp-buffer
+           (call-process-shell-command cmd nil `(,(current-buffer) nil) nil)
+           (goto-char (point-min))
+           (while (not (eobp))
+             (let* ((line (buffer-substring-no-properties
+                           (line-beginning-position) (line-end-position)))
+                    (match (split-string line ":")))
+               (push (car match) matches))
+             (forward-line 1)))
+         (puthash 'out (delete-dups matches) memory)))
+      (_ (error "Unexpected instruction: inst = %s" inst)))))
 
 ;; Exercise
 
-(cl-defstruct total-recall--exercise
-  "Exercise data structure."
-  subject id question answer)
+(total-recall--Actor
+ #'total-recall--Exercise-init
+ total-recall--Exercise)
 
-(defun total-recall--exercise-mk (subject id question answer)
-  "Create an exercise with SUBJECT, ID, QUESTION, and ANSWER.
-SUBJECT, ID, QUESTION, and ANSWER are strings. Signals an error if any argument
-is not a string. Returns an exercise structure."
-  (unless (stringp subject) (error "Subject is not a string"))
-  (unless (stringp id) (error "ID is not a string"))
-  (unless (stringp question) (error "Question is not a string"))
-  (unless (stringp answer) (error "Answer is not a string"))
-  (make-total-recall--exercise :subject subject
-                               :id id
-                               :question question
-                               :answer answer))
+(defun total-recall--Exercise-init (data)
+  "Initialize an exercise actor with DATA.
+DATA is a list of (FILE ID PATH QUESTION ANSWER), where FILE is a path,
+ID is a UUID string, PATH, QUESTION, and ANSWER are strings.
+Returns a memory hash table for the exercise actor."
+  (let ((memory (total-recall--Actor-memory
+                 #'total-recall--Exercise-rcv
+                 #'total-recall--Exercise-tx)))
+    (pcase data
+      (`(,file ,id ,path ,question ,answer)
+       (puthash 'file file memory)
+       (puthash 'id id memory)
+       (puthash 'path path memory)
+       (puthash 'question question memory)
+       (puthash 'answer answer memory)
+       memory)
+      (_
+       (error "Unexpected data: data = %s" data)))))
 
-(defun total-recall--exercise-scheduled (exercise db)
-  "Return the scheduled review time for EXERCISE using database DB.
-EXERCISE is an exercise structure. DB is an SQLite database handle.
-Returns a Lisp timestamp."
-  (total-recall--exercise-rcv exercise `(:scheduled ,db)))
+(defun total-recall--Exercise-rcv (msg)
+  "Process incoming MSG for the exercise actor.
+MSG is a symbol like `file`, `id`, `path`, `question`, `answer`, or `string`.
+Returns a list containing the corresponding instruction."
+  (pcase msg
+    ('file
+     '(file))
 
-(defun total-recall--exercise-rcv (exercise msg)
-  "Handle MSG for EXERCISE.
-EXERCISE is an exercise structure. MSG can be :subject, :id, :question, :answer,
-or (:scheduled DB). Returns the corresponding value (e.g., string or timestamp)."
-  (let ((subject (total-recall--exercise-subject exercise))
-        (id (total-recall--exercise-id exercise))
-        (question (total-recall--exercise-question exercise))
-        (answer (total-recall--exercise-answer exercise)))
+    ('id
+     '(id))
 
-    (pcase msg
-      (:subject subject)
+    ('path
+     '(path))
 
-      (:id id)
+    ('question
+     '(question))
 
-      (:question question)
+    ('answer
+     '(answer))
 
-      (:answer answer)
+    ('string
+     '(string))
 
-      (`(:scheduled ,db)
-       (let (measures (last-failure-index -1) nbr last-success-time)
-         (setq measures (total-recall--db-select db id))
+    (_ (error "Unexpected message: msg = %s" msg))))
 
-         (let ((i -1))
-           (dolist (measure measures)
-             (setq i (+ i 1))
-             (when (total-recall--failure-measure-p measure)
-               (setq last-failure-index i))))
+(defun total-recall--Exercise-tx (memory inst)
+  "Handle transaction INST for the exercise actor using MEMORY.
+MEMORY is the actor’s memory hash table.
+INST is a symbol like `file`, `id`, `path`, `question`, `answer`, or `string`.
+Updates MEMORY with the requested data."
+  (let ((file (gethash 'file memory))
+        (id (gethash 'id memory))
+        (path (gethash 'path memory))
+        (question (gethash 'question memory))
+        (answer (gethash 'answer memory)))
 
-         (setq nbr
-               (if (< last-failure-index 0)
-                   (length measures)
-                 (- (length measures) (1+ last-failure-index))))
+    (pcase inst
+      ('file
+       (puthash 'out file memory))
 
-         (setq last-success-time
-               (when (> nbr 0)
-                 (let ((last-measure (nth (1- (length measures)) measures)))
-                   (if (total-recall--success-measure-p last-measure)
-                       (total-recall--measure-time last-measure)
-                     (error "Last measure is not a success despite NBR > 0")))))
+      ('id
+       (puthash 'out id memory))
 
-         (if (zerop nbr)
-             (total-recall--time-init)
-           (let* ((delta-days (expt 2 (- nbr 1)))
-                  (delta-secs (* delta-days 24 60 60))
-                  (t-secs (time-to-seconds last-success-time))
-                  (result-secs (+ t-secs delta-secs)))
-             (seconds-to-time result-secs))))))))
+      ('path
+       (puthash 'out path memory))
 
-;; Node
+      ('question
+       (puthash 'out question memory))
+
+      ('answer
+       (puthash 'out answer memory))
+
+      ('string
+       (puthash 'out (string-join `("Exercise(" ,id ,path ,(total-recall--truncate-str question) ,(total-recall--truncate-str answer) ")") " ") memory))
+
+      (_ (error "Unexpected instruction: inst = %s" inst)))))
+
+;; Definition
+
+(total-recall--Actor #'total-recall--Definition-init total-recall--Definition)
+
+(defun total-recall--Definition-init (data)
+  "Initialize a definition actor with DATA.
+DATA is a list of (FILE ID PATH CONTENT), where FILE is a path,
+ID is a UUID string, PATH and CONTENT are strings.
+Returns a memory hash table for the definition actor."
+  (let ((memory (total-recall--Actor-memory
+                 #'total-recall--Definition-rcv
+                 #'total-recall--Definition-tx)))
+    (pcase data
+      (`(,file ,id ,path ,content)
+       (puthash 'file file memory)
+       (puthash 'id id memory)
+       (puthash 'path path memory)
+       (puthash 'content content memory)
+       memory)
+      (_
+       (error "Unexpected data: data = %s" data)))))
+
+(defun total-recall--Definition-rcv (msg)
+  "Process incoming MSG for the definition actor.
+MSG is a symbol like `file`, `id`, `path`, `content`, `question`,
+`answer`, or `string`.  Returns a list containing the corresponding
+instruction."
+  (pcase msg
+    ('file
+     `(file))
+
+    ('id
+     `(id))
+
+    ('path
+     `(path))
+
+    ('content
+     `(content))
+
+    ('question
+     `(question))
+
+    ('answer
+     `(content))
+
+    ('string
+     '(string))
+
+    (_ (error "Unexpected message: msg = %s" msg))))
+
+(defun total-recall--Definition-tx (memory inst)
+  "Handle transaction INST for the definition actor using MEMORY.
+MEMORY is the actor’s memory hash table.
+INST is a symbol like `file`, `id`, `path`, `content`, `question`, or `string`.
+Updates MEMORY with the requested data."
+  (let ((file (gethash 'file memory))
+        (id (gethash 'id memory))
+        (path (gethash 'path memory))
+        (content (gethash 'content memory)))
+
+    (pcase inst
+      ('file
+       (puthash 'out file memory))
+
+      ('id
+       (puthash 'out id memory))
+
+      ('path
+       (puthash 'out path memory))
+
+      ('content
+       (puthash 'out content memory))
+
+      ('question
+       (puthash 'out "* Definition?" memory))
+
+      ('string
+       (puthash 'out (string-join `("Definition(" ,id ,path ,(total-recall--truncate-str content) ")") " ") memory))
+
+      (_ (error "Unexpected instruction: inst = %s" inst)))))
+
+;; Parser
+
+(total-recall--Actor
+ #'total-recall--Parser-init
+ total-recall--Parser)
+
+(defun total-recall--Parser-init (data)
+  "Initialize a parser actor with DATA.
+DATA is a list of (DEF-ID EX-ID), where DEF-ID and EX-ID are strings
+identifying definition and exercise headings.
+Returns a memory hash table for the parser actor."
+  (let ((memory (total-recall--Actor-memory
+                 #'total-recall--Parser-rcv
+                 #'total-recall--Parser-tx)))
+    (pcase data
+      (`(,def-id ,ex-id)
+       (puthash 'def-id def-id memory)
+       (puthash 'ex-id ex-id memory)
+       memory)
+      (_
+       (error "Unexpected data: data = %s" data)))))
+
+(defun total-recall--Parser-rcv (msg)
+  "Process incoming MSG for the parser actor.
+MSG is a list like `(parse FILE)` where FILE is a file path.
+Returns a list containing the parse instruction."
+  (pcase msg
+    (`(parse ,_file) `(,msg))
+    (_ (error "Unexpected message: msg = %s" msg))))
+
+(defun total-recall--Parser-tx (memory inst)
+  "Handle transaction INST for the parser actor using MEMORY.
+MEMORY is the actor’s memory hash table.
+INST is a list like `(parse FILE)` where FILE is a file path.
+Updates MEMORY with the parsed elements."
+  (pcase inst
+    (`(parse ,file)
+     (puthash
+      'out
+      (with-temp-buffer
+        (insert-file-contents file)
+        (org-mode)
+        (org-fold-show-all)
+        (let ((org-element-use-cache nil))
+          (total-recall--node-depth-first
+           (org-element-parse-buffer 'greater-element)
+           (lambda (node) (total-recall--node-to-element file node)))))
+      memory))
+    (_ (error "Unexpected instruction: inst = %s" inst))))
 
 (defun total-recall--node-depth-first (node func)
-  "Return the list of results from calling FUNC on NODE."
+  "Traverse NODE depth-first and apply FUNC to each node.
+NODE is an Org element, and FUNC is a function taking a node.
+Returns a list of non-error results from FUNC."
   (let ((head
          (mapcan
           (lambda (node) (total-recall--node-depth-first node func))
@@ -504,37 +763,24 @@ or (:scheduled DB). Returns the corresponding value (e.g., string or timestamp).
       (:err head)
       (_ (append head (list last))))))
 
-(defun total-recall--node-subject (node)
-  "Return the subject of NODE.
-A subject is a string like A/B/C, where A and B are the titles of the
-parents of the node, and C is the title of the node. A node's title
-is the string of the relevant headline."
-  (string-join
-   (reverse
-    (org-element-lineage-map node
-        (lambda (parent) (org-element-property :raw-value parent))
-      '(headline)
-      t))
-   "/"))
+(defun total-recall--node-to-element (file node)
+  "Convert NODE to an exercise or definition element from FILE.
+FILE is the path to the Org file, and NODE is an Org element.
+Returns an exercise or definition actor, or `:err` if not applicable."
+  (let ((exercise-result (total-recall--node-to-exercise file node)))
+    (if (eq exercise-result :err)
+        (total-recall--node-to-definition file node)
+      exercise-result)))
 
-(defun total-recall--node-to-string (node)
-  "Return the string associated with NODE, leveled to level 1."
-  (replace-regexp-in-string
-   "\\`\\*+" "*"
-   (string-trim
-    (buffer-substring-no-properties
-     (org-element-property :begin node)
-     (org-element-property :end node)))))
-
-(defun total-recall--node-to-exercise (node)
-  "Return an exercise built from NODE, or `:err' if not possible.
-If NODE is expected to be an exercise based on its type but its
-structure is invalid, raise an error."
+(defun total-recall--node-to-exercise (file node)
+  "Convert NODE to an exercise actor from FILE.
+FILE is the path to the Org file, and NODE is an Org element.
+Returns an exercise actor or `:err` if NODE is not an exercise."
   (let (should-be-exercise id list-headline question answer)
 
     (setq should-be-exercise
           (and (eq (org-element-type node) 'headline)
-               (string= (org-element-property :TYPE node) total-recall-type-id)))
+               (string= (org-element-property :TYPE node) total-recall-ex-type)))
 
     (if should-be-exercise
         (progn
@@ -545,205 +791,653 @@ structure is invalid, raise an error."
                  (lambda (child) (eq (org-element-type child) 'headline))
                  (org-element-contents node)))
           (pcase (length list-headline)
-            (0 (error "Exercise has no question nor answer. id = %s" id))
-            (1 (error "Exercise has no answer. id = %s" id))
+            (0 (error "Exercise has no question nor answer: id = %s" id))
+            (1 (error "Exercise has no answer: id = %s" id))
             (_
              (setq question (total-recall--node-to-string (car list-headline)))
              (setq answer (total-recall--node-to-string (cadr list-headline)))))
 
-          (total-recall--exercise-mk
-           (total-recall--node-subject node)
-           id
-           question
-           answer))
+          (total-recall--Exercise
+           (list
+            file
+            id
+            (total-recall--node-subject node)
+            question
+            answer)))
       :err)))
 
-;; Filesystem
+(defun total-recall--node-to-definition (file node)
+  "Convert NODE to a definition actor from FILE.
+FILE is the path to the Org file, and NODE is an Org element.
+Returns a definition actor or `:err` if NODE is not a definition."
+  (let (should-be-definition id subject content)
 
-(defun total-recall--fs-list-exercises (path)
-  "List exercises in PATH.
-PATH is a string file or directory path. Returns a list of exercise structures."
-  (total-recall--fs-rcv path :list-exercises))
+    (setq should-be-definition
+          (and (eq (org-element-type node) 'headline)
+               (string= (org-element-property :TYPE node) total-recall-def-type)))
 
-(defun total-recall--fs-rcv (path msg)
-  "Handle MSG for PATH.
-PATH is a string file or directory path. MSG is a symbol like :list-exercises.
-Delegates to directory or file handlers. Returns the handler’s result."
-  (cond
-   ((file-directory-p path)
-    (total-recall--dir-rcv path msg))
-   ((file-exists-p path)
-    (total-recall--file-rcv path msg))))
+    (if should-be-definition
+        (progn
+          (setq id (org-element-property :ID node))
+          (setq subject (total-recall--node-subject node))
+          (unless (stringp id) (error "Definition has no ID property: file = %s" file))
+          (setq content (total-recall--node-to-string node))
+          (total-recall--Definition
+           (list
+            file
+            id
+            subject
+            content)))
+      :err)))
 
-(defun total-recall--dir-list-exercises (dir)
-  "List exercises in Org files under directory DIR.
-DIR is a string directory path. Returns a list of exercise structures."
-  (total-recall--dir-rcv dir :list-exercises))
+(defun total-recall--node-to-string (node)
+  "Convert NODE to a string with headline leveled to level 1.
+NODE is an Org element.
+Returns the trimmed string representation."
+  (replace-regexp-in-string
+   "\\`\\*+" "*"
+   (string-trim
+    (buffer-substring-no-properties
+     (org-element-property :begin node)
+     (org-element-property :end node)))))
 
-(defun total-recall--dir-rcv (dir msg)
-  "Handle MSG for directory DIR.
-DIR is a string directory path. MSG is a symbol like :list-exercises.
-Returns a list of exercise structures for :list-exercises."
+(defun total-recall--node-subject (node)
+  "Extract the subject of NODE as a path-like string.
+NODE is an Org headline element.
+Returns a string like A/B/C, where C is NODE’s title and A, B are ancestors."
+  (string-join
+   (reverse
+    (total-recall--org-element-lineage-map
+     (lambda (parent) (org-element-property :raw-value parent))
+     node
+     '(headline)
+     t))
+   " / "))
+
+;; Rating
+
+(total-recall--Actor #'total-recall--Rating-init total-recall--Rating)
+
+(defun total-recall--Rating-init (data)
+  "Initialize a rating actor with DATA.
+DATA is a list of (DATE ID VALUE), where DATE is a timestamp,
+ID is a UUID string, and VALUE is a symbol.
+Returns a memory hash table for the rating actor."
+  (let ((memory (total-recall--Actor-memory
+                 #'total-recall--Rating-rcv
+                 #'total-recall--Rating-tx)))
+    (pcase data
+      (`(,date ,id ,value)
+       (puthash 'date date memory)
+       (puthash 'id id memory)
+       (puthash 'value value memory)))
+
+    memory))
+
+(defun total-recall--Rating-rcv (msg)
+  "Process incoming MSG for the rating actor.
+MSG is a symbol like `struct`, `date`, or `value`.
+Returns a list containing the corresponding instruction."
   (pcase msg
-    (:list-exercises
-     (mapcan
-      (lambda (file-path) (total-recall--file-rcv file-path :list-exercises))
-      (total-recall--search dir "org" total-recall-type-id)))))
+    ('struct '(struct))
+    ('date '(date))
+    ('value '(value))
+    (_ (error "Unexpected message: msg = %s" msg))))
 
-(defun total-recall--file-list-exercises (file)
-  "List exercises in Org file FILE.
-FILE is a string file path. Returns a list of exercise structures."
-  (total-recall--file-rcv file :list-exercises))
+(defun total-recall--Rating-tx (memory inst)
+  "Handle transaction INST for the rating actor using MEMORY.
+MEMORY is the actor’s memory hash table.
+INST is a symbol like `struct`, `date`, or `value`.
+Updates MEMORY with the requested data."
+  (let ((date (gethash 'date memory))
+        (id (gethash 'id memory))
+        (value (gethash 'value memory)))
+    (pcase inst
+      ('struct
+       (puthash 'out `(,date ,id ,value) memory))
+      ('date
+       (puthash 'out date memory))
+      ('value
+       (puthash 'out value memory))
+      (_ (error "Unexpected instruction: inst = %s" inst)))))
 
-(defun total-recall--file-rcv (file msg)
-  "Handle MSG for Org file FILE.
-FILE is a string file path. MSG is a symbol like :list-exercises.
-Returns a list of exercise structures for :list-exercises."
+(defun total-recall--Rating-eq (r1 r2)
+  "Check if rating actors R1 and R2 are equal.
+R1 and R2 are rating actors.
+Returns t if their structures are equal, nil otherwise."
+  (equal (total-recall--struct r1)
+         (total-recall--struct r2)))
+
+;; DB
+
+(total-recall--Actor #'total-recall--DB-init total-recall--DB)
+
+(defun total-recall--DB-init (db-path)
+  "Initialize a database actor with DB-PATH.
+DB-PATH is a string or nil for an in-memory SQLite database.
+Returns a memory hash table for the database actor."
+  (let ((memory (total-recall--Actor-memory
+                 #'total-recall--DB-rcv
+                 #'total-recall--DB-tx))
+        (sqlite nil))
+
+    (unless (sqlite-available-p)
+      (error "Emacs must be compiled with built-in support for SQLite databases"))
+
+    (setq sqlite (sqlite-open db-path))
+
+    (unless (sqlite-select sqlite "SELECT name FROM sqlite_master WHERE type='table' AND name='exercise_log'")
+      (sqlite-execute sqlite
+                      "CREATE TABLE exercise_log (
+                       type TEXT NOT NULL,
+                       id TEXT NOT NULL,
+                       time TEXT NOT NULL)"))
+    (puthash 'sqlite sqlite memory)
+    memory))
+
+(defun total-recall--DB-rcv (msg)
+  "Process incoming MSG for the database actor.
+MSG is a list like `(save RATING)`, `(ratings ID)`, or `stop`.
+Returns a list containing the corresponding instruction."
   (pcase msg
-    (:list-exercises
-     (with-temp-buffer
-       (insert-file-contents file)
-       (org-mode)
-       (org-fold-show-all)
-       (let ((org-element-use-cache nil))
-         (total-recall--node-depth-first
-          (org-element-parse-buffer 'greater-element)
-          #'total-recall--node-to-exercise))))))
+    (`(save ,_rating)
+     `(,msg))
+
+    (`(ratings ,_id)
+     `(,msg))
+
+    ('stop
+     `(,msg))
+
+    (_ (error "Unexpected message: msg = %s" msg))))
+
+(defun total-recall--DB-tx (memory inst)
+  "Handle transaction INST for the database actor using MEMORY.
+MEMORY is the actor’s memory hash table.
+INST is a list or symbol like `(save RATING)`, `(ratings ID)`, or `stop`.
+Updates MEMORY based on INST."
+  (let ((self (gethash 'self memory))
+        (sqlite (gethash 'sqlite memory)))
+    (pcase inst
+      (`(save ,rating)
+       (pcase (total-recall--struct rating)
+         (`(,date ,id ,value)
+          (let ((row nil))
+            (setq row
+                  (list
+                   (if (memq value '(success failure skip))
+                       (symbol-name value)
+                     (error "Unexpected value: value = %s" value))
+
+                   (if (total-recall--string-uuid-p id)
+                       id
+                     (error "ID is not a UUID string: id = %s" id))
+
+                   (format-time-string "%FT%TZ" (time-convert date 'list) t)))
+
+            (sqlite-execute
+             sqlite
+             "INSERT INTO exercise_log (type, id, time) VALUES (?, ?, ?)"
+             row)))
+
+         (struct (error "Unexpected struct: struct = %s" struct)))
+       (puthash 'out self memory))
+
+      (`(ratings ,id)
+       (unless (total-recall--string-uuid-p id)
+         (error "ID is not a UUID string: id = %s" id))
+
+       (let (rows ratings)
+         (setq rows
+               (sqlite-select
+                sqlite
+                "SELECT type, id, time FROM exercise_log WHERE id = ? ORDER BY time ASC"
+                (list id)))
+
+         (setq ratings
+               (mapcar
+                (lambda (row)
+                  (pcase row
+                    (`(,type ,id ,time)
+                     (total-recall--Rating
+                      `(,(parse-iso8601-time-string time)
+                        ,(if (total-recall--string-uuid-p id) id
+                           (error "ID is not a UUID string: id = %s" id))
+                        ,(if (member type '("success" "failure" "skip")) (intern type)
+                           (error "Unexpected type: id = %s, type = %s" type id)))))
+                    (_ (error "Unexpected row: row = %s" row))))
+                rows))
+
+         (puthash 'out ratings memory)))
+
+      ('stop
+       (sqlite-close sqlite)
+       (puthash 'out self memory))
+
+      (_ (error "Unexpected instruction: inst = %s" inst)))))
+
+;; Planner
+
+(total-recall--Actor #'total-recall--Planner-init total-recall--Planner)
+
+(defun total-recall--Planner-init (data)
+  "Initialize a planner actor with DATA.
+DATA is a list of (DB CLOCK), where DB is a database actor and
+CLOCK is a clock actor.
+Returns a memory hash table for the planner actor."
+  (let ((memory (total-recall--Actor-memory
+                 #'total-recall--Planner-rcv
+                 #'total-recall--Planner-tx)))
+    (pcase data
+      (`(,db ,clock)
+       (puthash 'db db memory)
+       (puthash 'clock clock memory)
+       memory)
+      (_ (error "Unexpected data: data = %s" data)))))
+
+(defun total-recall--Planner-rcv (msg)
+  "Process incoming MSG for the planner actor.
+MSG is a list like `(select EXERCISES)` where EXERCISES is a list.
+Returns a list containing the select instruction."
+  (pcase msg
+    (`(select ,_exercises)
+     `(,msg))
+    (_ (error "Unexpected message: msg = %s" msg))))
+
+(defun total-recall--Planner-tx (memory inst)
+  "Handle transaction INST for the planner actor using MEMORY.
+MEMORY is the actor’s memory hash table.
+INST is a list like `(select EXERCISES)` or `(is_scheduled EX)`.
+Updates MEMORY with the filtered exercises or scheduling decision."
+  (let ((db (gethash 'db memory))
+        (clock (gethash 'clock memory)))
+    (pcase inst
+      (`(select ,exercises)
+       (puthash
+        'out
+        (seq-filter (lambda (ex) (total-recall--Planner-tx memory `(is_scheduled ,ex)) (gethash 'out memory)) exercises)
+        memory))
+
+      (`(is_scheduled ,ex)
+       (let (today ratings last-failure-idx successes delta_t last-rating cutoff decision)
+         (setq today (total-recall--now clock))
+         (setq ratings (total-recall--ratings db (total-recall--id ex)))
+         (setq successes
+               (pcase ratings
+                 ('nil '())
+                 (_
+                  (setq last-failure-idx
+                        (total-recall--find-last-index
+                         ratings
+                         (lambda (rating) (eq (total-recall--value rating) 'failure))))
+
+                  (seq-filter (lambda (rating) (eq (total-recall--value rating) 'success))
+                              (pcase last-failure-idx
+                                ('nil ratings)
+                                ((pred (eq (- (length ratings) 1)) '()))
+                                (_ (nthcdr (+ last-failure-idx 1) ratings)))))))
+         (setq cutoff
+               (pcase successes
+                 ('nil today)
+                 (_
+                  (setq delta_t (* (expt 2 (- (length successes) 1)) total-recall--day))
+                  (setq last-rating (car (last successes)))
+                  (time-add (total-recall--date last-rating) delta_t))))
+         (setq decision (total-recall--timestamp-leq cutoff today))
+         (puthash 'out decision memory)))
+
+      (_ (error "Unexpected instruction: inst = %s" inst)))))
+
+;; UI
+
+(total-recall--Actor #'total-recall--UI-init total-recall--UI)
+
+(defun total-recall--UI-init (data)
+  "Initialize a UI actor with DATA.
+DATA is a list of (NAME WIDTH HEIGHT CLOCK), where NAME is a buffer name,
+WIDTH and HEIGHT are integers, and CLOCK is a clock actor.
+Returns a memory hash table for the UI actor."
+  (let ((memory (total-recall--Actor-memory #'total-recall--UI-rcv #'total-recall--UI-tx)))
+    (pcase data
+      (`(,name ,width ,height ,clock)
+       (puthash 'buffer (get-buffer-create name) memory)
+       (with-current-buffer (gethash 'buffer memory) (setq buffer-read-only t))
+       (puthash 'name (buffer-name (gethash 'buffer memory)) memory)
+       (puthash 'width width memory)
+       (puthash 'height height memory)
+       (puthash 'frame (make-frame `((width . ,width) (height . ,height))) memory)
+       (puthash 'clock clock memory)
+       memory)
+      (_ (error "Unexpected data: data = %s" data)))))
+
+(defun total-recall--UI-rcv (msg)
+  "Process incoming MSG for the UI actor.
+MSG is a list like `(show-exercise EXERCISE)`, `(show-report REPORT)`,
+or `stop`.  Returns a list containing the corresponding instruction."
+  (pcase msg
+    (`(show-exercise ,_exercise)
+     `(,msg))
+
+    (`(show-report ,_report)
+     `(,msg))
+
+    ('stop
+     '(kill))
+
+    (_ (error "Unexpected message: msg = %s" msg))))
+
+(defun total-recall--UI-tx (memory inst)
+  "Handle transaction INST for the UI actor using MEMORY.
+MEMORY is the actor’s memory hash table.
+INST is a list or symbol for UI operations like `show-exercise` or `stop`.
+Updates MEMORY with the result of the operation."
+  (let ((self (gethash 'self memory))
+        (clock (gethash 'clock memory))
+        (frame (gethash 'frame memory))
+        (buffer (gethash 'buffer memory)))
+
+    (pcase inst
+      (`(show-exercise ,exercise)
+       (total-recall--UI-tx memory 'show-frame)
+       (total-recall--UI-tx memory 'clear)
+       (let (meta)
+         (setq meta (format "┌────
+│ file: %s
+│ link: %s
+│ path: %s
+└────
+"
+                            (total-recall--file exercise)
+                            (format "[[ref:%s]]" (total-recall--id exercise))
+                            (total-recall--path exercise)))
+         (total-recall--UI-tx memory `(show-content ,meta)))
+       (total-recall--UI-tx memory `(show-content ,(total-recall--question exercise)))
+       (total-recall--UI-tx memory `(ask ((,total-recall-key-quit . "Quit")
+                                          (,total-recall-key-skip . "Skip")
+                                          (,total-recall-key-reveal . "Reveal"))))
+       (pcase (gethash 'out memory)
+         ((pred (equal total-recall-key-quit)) (total-recall--UI-tx memory 'stop))
+         ((pred (equal total-recall-key-skip)) (total-recall--UI-tx memory `(skip ,exercise)))
+         ((pred (equal total-recall-key-reveal))
+          (total-recall--UI-tx memory `(show-content ,(total-recall--answer exercise)))
+          (total-recall--UI-tx memory `(ask ((,total-recall-key-success . "Success")
+                                             (,total-recall-key-failure . "Failure")
+                                             (,total-recall-key-skip . "Skip")
+                                             (,total-recall-key-quit . "Quit"))))
+          (pcase (gethash 'out memory)
+            ((pred (equal total-recall-key-success)) (total-recall--UI-tx memory `(success ,exercise)))
+            ((pred (equal total-recall-key-failure)) (total-recall--UI-tx memory `(failure ,exercise)))
+            ((pred (equal total-recall-key-skip)) (total-recall--UI-tx memory `(skip ,exercise)))
+            ((pred (equal total-recall-key-quit)) (total-recall--UI-tx memory 'stop))))))
+
+      ('show-frame
+       (select-frame-set-input-focus frame)
+       (switch-to-buffer buffer)
+       (puthash 'out self memory))
+
+      ('clear
+       (with-current-buffer buffer
+         (setq buffer-read-only nil)
+         (erase-buffer)
+         (unless (derived-mode-p 'org-mode) (org-mode))
+         (insert "* Total Recall *\n\n")
+         (goto-char (point-min))
+         (setq buffer-read-only t))
+       (puthash 'out self memory))
+
+      (`(show-report ,report)
+       (total-recall--UI-tx memory 'clear)
+       (total-recall--UI-tx memory 'show-frame)
+       (total-recall--UI-tx memory `(show-content ,(total-recall--string report)))
+       (puthash 'out self memory))
+
+      (`(show-content ,content)
+       (total-recall--UI-tx memory 'show-frame)
+       (with-current-buffer buffer
+         (setq buffer-read-only nil)
+         (save-excursion
+           (goto-char (point-max))
+           (insert (string-join (list (string-trim content) "\n\n"))))
+         (setq buffer-read-only t))
+       (puthash 'out self memory))
+
+      ('kill
+       (when (buffer-live-p buffer) (kill-buffer buffer))
+       (when (frame-live-p frame) (delete-frame frame))
+       (puthash 'out self memory))
+
+      ('stop
+       (puthash 'out 'stop memory))
+
+      (`(ask ,options)
+       (total-recall--UI-tx memory 'show-frame)
+       (let (strs str key)
+         (setq strs
+               (mapcar
+                (lambda (opt)
+                  (pcase opt
+                    (`(,char . ,name)
+                     (format "%s (%s)" name (string char)))
+                    (_
+                     (error "Unexpected option: option = %s" opt))))
+                options))
+         (setq str (string-join strs ", "))
+         (setq key (read-char-choice str (mapcar #'car options)))
+         (puthash 'out key memory)))
+
+      (`(skip ,exercise)
+       (puthash
+        'out
+        `(rating ,(total-recall--Rating (list (total-recall--now clock) (total-recall--id exercise) 'skip)))
+        memory))
+
+      (`(success ,exercise)
+       (puthash
+        'out
+        `(rating ,(total-recall--Rating (list (total-recall--now clock) (total-recall--id exercise) 'success)))
+        memory))
+
+      (`(failure ,exercise)
+       (puthash
+        'out
+        `(rating ,(total-recall--Rating (list (total-recall--now clock) (total-recall--id exercise) 'failure)))
+        memory))
+
+      (_ (error "Unexpected instruction: inst = %s" inst)))))
+
+;; IO
+
+(total-recall--Actor
+ #'total-recall--IO-init
+ total-recall--IO)
+
+(defun total-recall--IO-init (name)
+  "Initialize an IO actor with NAME.
+NAME is a string for the output buffer name.
+Returns a memory hash table for the IO actor."
+  (let ((memory (total-recall--Actor-memory
+                 #'total-recall--IO-rcv
+                 #'total-recall--IO-tx)))
+    (puthash 'buffer (get-buffer-create name) memory)
+    (puthash 'name (buffer-name (gethash 'buffer memory)) memory)
+    memory))
+
+(defun total-recall--IO-rcv (msg)
+  "Process incoming MSG for the IO actor.
+MSG is a list like `(minibuffer STRING)`, `(buffer STRING)`, or `buffer-name`.
+Returns a list containing the corresponding instruction."
+  (pcase msg
+    (`(minibuffer ,_string)
+     `(,msg))
+
+    (`(buffer ,_string)
+     `(,msg))
+
+    ('buffer-name
+     `(,msg))
+
+    (_ (error "Unexpected message: msg = %s" msg))))
+
+(defun total-recall--IO-tx (memory inst)
+  "Handle transaction INST for the IO actor using MEMORY.
+MEMORY is the actor’s memory hash table.
+INST is a list or symbol like `(minibuffer STRING)` or `buffer-name`.
+Updates MEMORY with the result of the operation."
+  (let ((self (gethash 'self memory))
+        (buffer (gethash 'buffer memory))
+        (name (gethash 'name memory)))
+
+    (pcase inst
+      (`(minibuffer ,string)
+       (message "%s" (string-trim string))
+       (puthash 'out self memory))
+
+      (`(buffer ,string)
+       (with-current-buffer buffer
+         (insert (string-join (list string "\n"))))
+       (puthash 'out self memory))
+
+      ('buffer-name
+       (puthash 'out name memory))
+
+      (_ (error "Unexpected instruction: inst = %s" inst)))))
+
+;; TotalRecall
+
+(total-recall--Actor #'total-recall--TotalRecall-init total-recall--TotalRecall)
+
+(defun total-recall--TotalRecall-init (_data)
+  "Initialize a TotalRecall actor with DATA.
+DATA is ignored in this implementation.
+Returns a memory hash table with initialized sub-actors."
+  (let ((memory (total-recall--Actor-memory
+                 #'total-recall--TotalRecall-rcv
+                 #'total-recall--TotalRecall-tx)))
+    (puthash 'clock (total-recall--Clock t) memory)
+
+    (puthash 'db-path total-recall-database memory)
+    (puthash 'db (total-recall--DB (gethash 'db-path memory)) memory)
+
+    (puthash 'root total-recall-root-dir memory)
+    (puthash 'def-type total-recall-def-type memory)
+    (puthash 'ex-type total-recall-ex-type memory)
+    (puthash 'searcher (total-recall--Searcher (list (gethash 'root memory) (gethash 'def-type memory) (gethash 'ex-type memory))) memory)
+
+    (puthash 'parser (total-recall--Parser (list (gethash 'def-type memory) (gethash 'ex-type memory))) memory)
+
+    (puthash 'planner (total-recall--Planner (list (gethash 'db memory) (gethash 'clock memory))) memory)
+
+    (puthash 'ui (total-recall--UI (list "*TotalRecall UI*" total-recall-window-width total-recall-window-height (gethash 'clock memory))) memory)
+
+    (puthash 'nbr-files 0 memory)
+
+    (puthash 'nbr-exercises 0 memory)
+
+    (puthash 'files '() memory)
+
+    (puthash 'exercises '() memory)
+
+    memory))
+
+(defun total-recall--TotalRecall-rcv (msg)
+  "Process incoming MSG for the TotalRecall actor.
+MSG is a symbol like `start` or `stop`.
+Returns a list containing the corresponding instruction."
+  (pcase msg
+    ('start '(start))
+    ('stop '(stop))
+    (_ (error "Unexpected message: msg = %s" msg))))
+
+(defun total-recall--TotalRecall-tx (memory inst)
+  "Handle transaction INST for the TotalRecall actor using MEMORY.
+MEMORY is the actor’s memory hash table.
+INST is a symbol or list for operations like `start` or `process-file`.
+Updates MEMORY with the result of the operation."
+  (let ((self (gethash 'self memory))
+        (root (gethash 'root memory))
+        (db-path (gethash 'db-path memory))
+        (searcher (gethash 'searcher memory))
+        (parser (gethash 'parser memory))
+        (db (gethash 'db memory))
+        (planner (gethash 'planner memory))
+        (ui (gethash 'ui memory))
+        (nbr-files (gethash 'nbr-files memory))
+        (nbr-exercises (gethash 'nbr-exercises memory))
+        (report (gethash 'report memory))
+        (files (gethash 'files memory))
+        (exercises (gethash 'exercises memory)))
+
+    (pcase inst
+      ('start
+       (let ((report (puthash 'report (total-recall--Report t) memory)))
+
+         (total-recall--add report "TotalRecall started.")
+         (total-recall--add report (format "Definitions and exercises under %s will be reviewed." root))
+         (total-recall--add report (format "Review results will be saved in %s." db-path))
+         (puthash 'files (total-recall--files searcher) memory)
+         (total-recall--add report (format "%s files have been found." (length (gethash 'files memory))))
+         (total-recall--TotalRecall-tx memory 'process-files)
+         (total-recall--add report (format "%s files have been reviewed." (gethash 'nbr-files memory)))
+         (total-recall--add report (format "%s exercises have been reviewed." (gethash 'nbr-exercises memory)))
+         (puthash 'out report memory)))
+
+      ('process-files
+       (pcase files
+         ('()
+          (puthash 'out self memory))
+         (`(,file . ,files)
+          (puthash 'files files memory)
+          (total-recall--TotalRecall-tx memory `(process-file ,file))
+          (total-recall--TotalRecall-tx memory 'process-files))))
+
+      (`(process-file ,file)
+       (total-recall--add report (format "file = %s" file))
+       (puthash 'exercises (total-recall--select planner (total-recall--parse parser file)) memory)
+       (total-recall--add report (format "%s exercises have been found." (length (gethash 'exercises memory))))
+       (total-recall--TotalRecall-tx memory 'process-exercises)
+       (puthash 'nbr-files (+ nbr-files 1) memory))
+
+      ('process-exercises
+       (pcase exercises
+         ('()
+          (puthash 'out self memory))
+         (`(,exercise . ,exercises)
+          (puthash 'exercises exercises memory)
+          (total-recall--TotalRecall-tx memory `(process-exercise ,exercise))
+          (total-recall--TotalRecall-tx memory 'process-exercises))))
+
+      (`(process-exercise ,exercise)
+       (total-recall--add report (format "exercise = %s %s" (total-recall--id exercise) (total-recall--path exercise)))
+       (pcase (total-recall--show-exercise ui exercise)
+         ('stop
+          (puthash 'files '() memory)
+          (puthash 'exercises '() memory)
+          (puthash 'out self memory))
+         (`(rating ,rating)
+          (total-recall--save db rating)
+          (puthash 'nbr-exercises (+ nbr-exercises 1) memory)
+          (puthash 'out self memory))))
+
+      ('stop
+       (total-recall--stop ui)
+       (total-recall--stop db)
+       (puthash 'out self memory))
+
+      (_ (error "Unexpected instruction: inst = %s" inst)))))
 
 ;; total-recall
 
 ;;;###autoload
 (defun total-recall ()
-  "Provide spaced repetitions capabilities to Emacs.
-
-This package provides `total-recall'.
-
-The command `M-x total-recall' uses Ripgrep to search for Org files in
-the directory set by `total-recall-root-dir' that contain
-exercises. It lists the exercises from each file and provides a user
-interface to view them. The list of exercises follows a depth first
-order /i.e./ a bottom-up review order.
-
-Each exercise displays its question first, followed by the answer. The
-user's performance—whether they answered correctly—is recorded in an
-SQLite database at `total-recall-database'. This data determines when
-an exercise should be reviewed next.
-
-An exercise is any Org file heading that meets these criteria:
-- Has a `TYPE' property set to `total-recall-type-id'.
-- Has an `ID' property with a UUID value.
-- Contains two subheadings:
-  - The first subheading is the question.
-  - The second subheading is the answer.
-- Is located in `total-recall-root-dir'.
-
-Example of an exercise:
-
-#+begin_src org
-* Emacs
-:PROPERTIES:⁣
-:TYPE: b0d53cd4-ad89-4333-9ef1-4d9e0995a4d8
-:ID: ced2b42b-bfba-4af5-913c-9d903ac78433
-:END:
-
-** What is GNU Emacs?
-
-[optional content]
-
-** Answer
-
-An extensible, customizable, free/libre text editor—and more. Its core
-is an interpreter for Emacs Lisp, a Lisp dialect with extensions for
-text editing.
-#+end_src
-
-Exercises can be embedded in any Org Mode document for context:
-
-#+begin_src org
-* Title
-** Section
-*** Sub-section
-**** Exercise 1
-**** Exercise 2
-*** Exercise 3
-*** Exercise 4
-#+end_src
-
-which would lead to this review order:
-
-1) Title/Section/Sub-section/Exercise 1
-2) Title/Section/Sub-section/Exercise 2
-3) Title/Section/Exercise 3
-4) Title/Section/Exercise 4
-
-which may be pruned by the scheduling algorithm to:
-
-1) Title/Section/Sub-section/Exercise 1
-2) Title/Section/Exercise 4
-
-depending on accumulated data so far.
-
-A reference to the exercise in its original content is displayed
-as its subject using the format:
-
-[[ref:<ExerciseID>][A/B/C]]
-
-When interpreted with the `locs-and-refs' package, it lets you display
-the exercise in context in another frame."
+  "Run the Total Recall spaced repetition application.
+Initiates a TotalRecall actor, processes data, and displays the report."
   (interactive)
-
-  (unless (executable-find total-recall-ripgrep-cmd)
-    (user-error "Ripgrep (rg) is not installed. Please install it to use this package"))
-
-  (let ((exercises (total-recall--fs-list-exercises total-recall-root-dir))
-        (db (total-recall--db-mk total-recall-database))
-        (ui (total-recall--ui-mk))
-        (use-dialog-box nil)
-        exercise
-        scheduled
-        choice)
-    (total-recall--ui-init ui)
-    (if (null exercises)
-        (total-recall--ui-no-exercises ui)
-      (while exercises
-        (setq exercise (pop exercises))
-        (setq scheduled (total-recall--exercise-scheduled exercise db))
-        (when (time-less-p scheduled (current-time))
-          (total-recall--ui-display-question
-           ui
-           (total-recall--exercise-id exercise)
-           (total-recall--exercise-subject exercise)
-           (total-recall--exercise-question exercise))
-          (setq choice
-                (read-char-choice
-                 (format "Reveal (%c), Skip (%c), Quit (%c): "
-                         total-recall-key-reveal
-                         total-recall-key-skip
-                         total-recall-key-quit)
-                 (list total-recall-key-reveal total-recall-key-skip total-recall-key-quit)))
-          (pcase choice
-            ((pred (eq total-recall-key-reveal))
-             (total-recall--ui-display-answer ui (total-recall--exercise-answer exercise))
-             (setq choice
-                   (read-char-choice
-                    (format "Success (%c), Failure (%c), Quit (%c): "
-                            total-recall-key-success
-                            total-recall-key-failure
-                            total-recall-key-quit)
-                    (list total-recall-key-success total-recall-key-failure total-recall-key-quit)))
-             (pcase choice
-               ((pred (eq total-recall-key-success))
-                (total-recall--db-save db (total-recall--success-measure-mk (total-recall--exercise-id exercise) (current-time))))
-               ((pred (eq total-recall-key-failure))
-                (total-recall--db-save db (total-recall--failure-measure-mk (total-recall--exercise-id exercise) (current-time))))
-               ((pred (eq total-recall-key-quit))
-                (setq exercises nil))))
-            ((pred (eq total-recall-key-skip))
-             nil)
-            ((pred (eq total-recall-key-quit))
-             (setq exercises nil))))))
-    (total-recall--db-close db)
-    (total-recall--ui-kill ui)))
+  (let* ((tr (total-recall--TotalRecall t))
+         (report (total-recall--start tr))
+         (io (total-recall--IO total-recall-io-buffer-name)))
+    (total-recall--stop tr)
+    (total-recall--buffer io (total-recall--string report))
+    (total-recall--minibuffer io (format "Total-recall execution finished. Report written to %s" (total-recall--buffer-name io)))))
 
 (provide 'total-recall)
 
